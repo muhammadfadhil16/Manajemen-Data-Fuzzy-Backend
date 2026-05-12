@@ -32,10 +32,11 @@ class FuzzyIntegrationService
         ];
 
         // HTTP POST ke Fuzzy Service
-        $response = Http::post("{$this->baseUrl}/api/perhitungan", $payload);
+        $response = Http::post("{$this->baseUrl}/api/penilaian", $payload);
 
         if ($response->failed()) {
-            throw new \Exception("Fuzzy Service tidak merespon.");
+            $errorBody = $response->body();
+            throw new \Exception("Fuzzy Service Error: " . ($errorBody ?: "Tidak merespon."));
         }
 
         return $response->json()['data'];
