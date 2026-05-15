@@ -58,6 +58,46 @@ Komponen ini adalah jembatan (bridge) ke Fuzzy Service.
 
 ## 4. Dokumentasi API
 
+### Daftar Penilaian (Pagination)
+Mengambil daftar riwayat penilaian yang sudah dilakukan.
+
+**Endpoint:** `GET /api/assessments?page=1`
+
+**Response (Success):**
+```json
+{
+    "status": "success",
+    "data": {
+        "current_page": 1,
+        "data": [
+            {
+                "id": 1,
+                "laptop_name": "ThinkPad X1 Carbon",
+                "lcd_input": 90,
+                "battery_input": 85,
+                "ram_input": 8,
+                "keyboard_input": 95,
+                "final_score": 88.5,
+                "status": "Bagus",
+                "created_at": "2026-05-12T02:27:55.000000Z",
+                "updated_at": "2026-05-12T02:27:55.000000Z"
+            }
+        ],
+        "first_page_url": "...",
+        "from": 1,
+        "last_page": 1,
+        "last_page_url": "...",
+        "links": [ ],
+        "next_page_url": null,
+        "path": "...",
+        "per_page": 10,
+        "prev_page_url": null,
+        "to": 1,
+        "total": 1
+    }
+}
+```
+
 ### Simpan Penilaian Baru
 Digunakan untuk menghitung kelayakan laptop dan menyimpannya ke database.
 
@@ -91,6 +131,19 @@ Digunakan untuk menghitung kelayakan laptop dan menyimpannya ke database.
         "created_at": "2026-05-12T02:27:55.000000Z",
         "updated_at": "2026-05-12T02:27:55.000000Z"
     }
+}
+```
+
+### Hapus Data Penilaian
+Digunakan untuk menghapus riwayat penilaian berdasarkan ID.
+
+**Endpoint:** `DELETE /api/assessments/{id}`
+
+**Response (Success):**
+```json
+{
+    "status": "success",
+    "message": "Data penilaian berhasil dihapus."
 }
 ```
 
@@ -128,4 +181,4 @@ Konfigurasi ini dibaca melalui `config/services.php`:
    - Pastikan URL di `.env` Core Service sudah benar.
 
 ---
-*Dokumentasi ini diperbarui pada 12 Mei 2026 setelah integrasi berhasil.*
+*Dokumentasi ini diperbarui pada 15 Mei 2026 dengan penambahan endpoint Manajemen Riwayat.*

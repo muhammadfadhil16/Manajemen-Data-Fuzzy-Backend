@@ -13,6 +13,15 @@ class AssessmentController extends Controller
         private FuzzyIntegrationService $fuzzyIntegration
     ) {}
 
+    public function index()
+    {
+        $assessments = Assessment::orderBy('created_at', 'asc')->paginate(10);
+        return response()->json([
+            'status' => 'success',
+            'data' => $assessments
+        ]);
+    }
+
     public function store(Request $request)
     {
         $request->validate([
@@ -54,5 +63,25 @@ class AssessmentController extends Controller
         } catch (\Exception $e) {
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
+    }
+
+    public function show($id)
+    {
+        $assessment = Assessment::findOrFail($id);
+        return response()->json([
+            'status' => 'success',
+            'data' => $assessment
+        ]);
+    }
+
+    public function destroy($id)
+    {
+        $assessment = Assessment::findOrFail($id);
+        $assessment->delete();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Data penilaian berhasil dihapus.'
+        ]);
     }
 }
