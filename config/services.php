@@ -36,7 +36,7 @@ return [
     ],
 
     'fuzzy' => [
-        'url' => env('FUZZY_SERVICE_URL', 'http://fuzzy-service.test'),
+        'url' => env('FUZZY_SERVICE_URL', 'http://fuzzy'),
     ],
 
 ];

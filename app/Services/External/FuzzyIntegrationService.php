@@ -12,7 +12,7 @@ class FuzzyIntegrationService
     public function __construct()
     {
         // Alamat URL Fuzzy Service (bisa diatur di .env)
-        $this->baseUrl = config('services.fuzzy.url', 'http://fuzzy-service.test');
+        $this->baseUrl = rtrim(config('services.fuzzy.url', 'http://fuzzy'), '/');
     }
 
     public function getAssessment(array $input)
@@ -32,14 +32,21 @@ class FuzzyIntegrationService
         ];
 
         // HTTP POST ke Fuzzy Service
-        $response = Http::post("{$this->baseUrl}/api/penilaian", $payload);
+        $url = "{$this->baseUrl}/api/penilaian";
+        $response = Http::acceptJson()->post($url, $payload);
 
         if ($response->failed()) {
             $errorBody = $response->body();
-            throw new \Exception("Fuzzy Service Error: " . ($errorBody ?: "Tidak merespon."));
+            throw new \Exception("Fuzzy Service Error ({$response->status()}): " . ($errorBody ?: "Tidak merespon."));
         }
 
-        return $response->json()['data'];
+        $json = $response->json();
+        if (!is_array($json) || !array_key_exists('data', $json)) {
+            $bodyPreview = $response->body();
+            throw new \Exception("Fuzzy Service Error: Invalid JSON response from {$url}. Body: " . ($bodyPreview ?: "<empty>"));
+        }
+
+        return $json['data'];
     }
 
     private function formatRulesForFuzzyService(): array
