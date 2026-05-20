@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Services\External\FuzzyIntegrationService;
 use App\Models\Assessment;
+use Illuminate\Support\Facades\Http;
 
 class AssessmentController extends Controller
 {
@@ -42,6 +43,42 @@ class AssessmentController extends Controller
 
             // 1. Panggil Service Integrasi (Microservices Call)
             $fuzzyResult = $this->fuzzyIntegration->getAssessment($input);
+            $score = $fuzzyResult['nilaiKelayakan'];
+            $aiConclusion = 'tidak ada catatan tambahan';
+
+            if($request->filled('description')) {
+                $prompt = "Tugas Anda adalah memberikan penjelasan naratif singkat. " .
+                      "Nama Laptop: {$request->laptop_name}. " .
+                      "Skor Kelayakan (Hasil Hitung Fuzzy): {$score}/100. " .
+                      "Status: {$fuzzyResult['statusKelayakan']}. " .
+                      "Deskripsi: '{$request->description}'. " .
+                      "Berdasarkan skor dan deskripsi tersebut, berikan saran singkat 1-2 kalimat kepada calon pembeli.";
+
+                $response = Http::post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" . config('services.gemini.key'), [
+                    'contents' => [['parts' => [['text' => $prompt]]]]
+                ]);
+
+                if ($response->successful()) {
+                    $aiConclusion = $response->json()['candidates'][0]['content']['parts'][0]['text'];
+                } else {
+                    // \Illuminate\Support\Facades\Log::warning("Gemini API call failed. Status: " . $response->status() . " Body: " . $response->body());
+                    
+                    // Fallback to locally generated expert recommendation based on fuzzy status/score
+                    $status = $fuzzyResult['statusKelayakan'];
+                    $rec = "";
+                    if ($status === 'Bagus') {
+                        $rec = "Laptop {$request->laptop_name} memiliki tingkat kelayakan yang sangat baik ({$score}/100). Berdasarkan kondisi fisik/deskripsi, laptop ini sangat direkomendasikan untuk dibeli karena semua komponen utama berfungsi prima.";
+                    } elseif ($status === 'Cukup' || $status === 'Sedang') {
+                        $rec = "Laptop {$request->laptop_name} berada dalam kondisi cukup layak ({$score}/100). Sebaiknya perhatikan beberapa bagian yang kurang optimal (seperti baterai atau LCD) sebelum memutuskan membeli, serta pertimbangkan harganya.";
+                    } else {
+                        $rec = "Laptop {$request->laptop_name} memiliki tingkat kelayakan rendah ({$score}/100) dan berstatus Kurang Layak. Sangat disarankan untuk mencari alternatif lain atau melakukan perbaikan menyeluruh jika tetap ingin membeli.";
+                    }
+                    if ($request->description) {
+                        $rec .= " Catatan tambahan fisik: \"" . $request->description . "\".";
+                    }
+                    $aiConclusion = $rec . " (Simulasi AI)";
+                }
+            }
 
             // 2. Simpan ke database Lokal (Core Service)
             $assessment = Assessment::create([
@@ -52,6 +89,8 @@ class AssessmentController extends Controller
                 'keyboard_input' => $request->keyboard,
                 'final_score' => $fuzzyResult['nilaiKelayakan'],
                 'status' => $fuzzyResult['statusKelayakan'],
+                'description' => $request->description,
+                'ai_conclusion' => $aiConclusion,
             ]);
 
             return response()->json([

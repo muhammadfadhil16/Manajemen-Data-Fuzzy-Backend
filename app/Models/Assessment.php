@@ -14,6 +14,8 @@ class Assessment extends Model
         'keyboard_input',
         'final_score',
         'status',
+        'description',
+        'ai_conclusion',
     ];
 
     protected $casts = [

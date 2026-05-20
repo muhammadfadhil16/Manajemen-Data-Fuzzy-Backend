@@ -39,4 +39,8 @@ return [
         'url' => env('FUZZY_SERVICE_URL', 'http://fuzzy'),
     ],
 
+    'gemini' => [
+        'key' => env('GEMINI_API_KEY'),
+    ],
+
 ];
