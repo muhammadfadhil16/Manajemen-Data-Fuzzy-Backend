@@ -5,17 +5,17 @@ namespace App\Services\External;
 use Illuminate\Support\Facades\Http;
 use App\Models\FuzzyRule;
 
-class FuzzyIntegrationService
+class EvaluatorService
 {
     private string $baseUrl;
 
     public function __construct()
     {
         // Alamat URL Fuzzy Service (bisa diatur di .env)
-        $this->baseUrl = rtrim(config('services.fuzzy.url', 'http://fuzzy'), '/');
+        $this->baseUrl = rtrim(config('services.fuzzy.url', 'http://evaluator'), '/');
     }
 
-    public function getAssessment(array $input)
+    public function evaluator(array $input)
     {
         // Ambil aturan terbaru dari database Core Service
         $rules = $this->formatRulesForFuzzyService();
@@ -32,7 +32,7 @@ class FuzzyIntegrationService
         ];
 
         // HTTP POST ke Fuzzy Service
-        $url = "{$this->baseUrl}/api/penilaian";
+        $url = "{$this->baseUrl}/api/evaluator";
         $response = Http::acceptJson()->post($url, $payload);
 
         if ($response->failed()) {

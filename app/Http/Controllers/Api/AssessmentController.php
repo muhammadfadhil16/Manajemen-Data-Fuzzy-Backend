@@ -4,14 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use App\Services\External\FuzzyIntegrationService;
+use App\Services\External\EvaluatorService;
 use App\Models\Assessment;
 use Illuminate\Support\Facades\Http;
 
 class AssessmentController extends Controller
 {
     public function __construct(
-        private FuzzyIntegrationService $fuzzyIntegration
+        private EvaluatorService $evaluatorService
     ) {}
 
     public function index()
@@ -42,15 +42,15 @@ class AssessmentController extends Controller
             ];
 
             // 1. Panggil Service Integrasi (Microservices Call)
-            $fuzzyResult = $this->fuzzyIntegration->getAssessment($input);
-            $score = $fuzzyResult['nilaiKelayakan'];
+            $evaluationResult = $this->evaluatorService->evaluator($input);
+            $score = $evaluationResult['nilaiKelayakan'];
             $aiConclusion = 'tidak ada catatan tambahan';
 
             if($request->filled('description')) {
                 $prompt = "Tugas Anda adalah memberikan penjelasan naratif singkat. " .
                       "Nama Laptop: {$request->laptop_name}. " .
-                      "Skor Kelayakan (Hasil Hitung Fuzzy): {$score}/100. " .
-                      "Status: {$fuzzyResult['statusKelayakan']}. " .
+                      "Skor Kelayakan (Hasil Hitung Evaluator): {$score}/100. " .
+                      "Status: {$evaluationResult['statusKelayakan']}. " .
                       "Deskripsi: '{$request->description}'. " .
                       "Berdasarkan skor dan deskripsi tersebut, berikan saran singkat 1-2 kalimat kepada calon pembeli.";
 
@@ -64,14 +64,14 @@ class AssessmentController extends Controller
                     // \Illuminate\Support\Facades\Log::warning("Gemini API call failed. Status: " . $response->status() . " Body: " . $response->body());
                     
                     // Fallback to locally generated expert recommendation based on fuzzy status/score
-                    $status = $fuzzyResult['statusKelayakan'];
+                    $status = $evaluationResult['statusKelayakan'];
                     $rec = "";
                     if ($status === 'Bagus') {
                         $rec = "Laptop {$request->laptop_name} memiliki tingkat kelayakan yang sangat baik ({$score}/100). Berdasarkan kondisi fisik/deskripsi, laptop ini sangat direkomendasikan untuk dibeli karena semua komponen utama berfungsi prima.";
                     } elseif ($status === 'Cukup' || $status === 'Sedang') {
                         $rec = "Laptop {$request->laptop_name} berada dalam kondisi cukup layak ({$score}/100). Sebaiknya perhatikan beberapa bagian yang kurang optimal (seperti baterai atau LCD) sebelum memutuskan membeli, serta pertimbangkan harganya.";
                     } else {
-                        $rec = "Laptop {$request->laptop_name} memiliki tingkat kelayakan rendah ({$score}/100) dan berstatus Kurang Layak. Sangat disarankan untuk mencari alternatif lain atau melakukan perbaikan menyeluruh jika tetap ingin membeli.";
+                        $rec = "Laptop {$request->laptop_name} memiliki tingkat kelayakan rendah ({$score}/100) and berstatus Kurang Layak. Sangat disarankan untuk mencari alternatif lain atau melakukan perbaikan menyeluruh jika tetap ingin membeli.";
                     }
                     if ($request->description) {
                         $rec .= " Catatan tambahan fisik: \"" . $request->description . "\".";
@@ -87,8 +87,8 @@ class AssessmentController extends Controller
                 'battery_input' => $request->battery,
                 'ram_input' => $request->ram,
                 'keyboard_input' => $request->keyboard,
-                'final_score' => $fuzzyResult['nilaiKelayakan'],
-                'status' => $fuzzyResult['statusKelayakan'],
+                'final_score' => $evaluationResult['nilaiKelayakan'],
+                'status' => $evaluationResult['statusKelayakan'],
                 'description' => $request->description,
                 'ai_conclusion' => $aiConclusion,
             ]);
