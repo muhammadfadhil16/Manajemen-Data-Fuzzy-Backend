@@ -29,10 +29,10 @@ Menyimpan riwayat penilaian laptop beserta rekomendasi AI.
 |-------|-----------|-----------|
 | `id` | BigInt (PK) | Identifier unik. |
 | `laptop_name` | String | Nama/Model laptop yang dinilai. |
-| `lcd_input` | Float | Nilai kondisi layar (input). |
-| `battery_input` | Float | Nilai kesehatan baterai (input). |
-| `ram_input` | Float | Kapasitas/Skor RAM (input). |
-| `keyboard_input`| Float | Skor kondisi keyboard (input). |
+| `lcd` | Float | Nilai kondisi layar (input). |
+| `battery` | Float | Nilai kesehatan baterai (input). |
+| `processor` | Float | Nilai processor (input). |
+| `keyboard`| Float | Skor kondisi keyboard (input). |
 | `final_score` | Float | Hasil perhitungan nilai kelayakan (0-100). |
 | `status` | String | Status kelayakan (e.g., Bagus, Sedang, Kurang Layak). |
 | `description` | Text | (Opsional) Deskripsi catatan kondisi fisik tambahan. |
@@ -77,10 +77,10 @@ Mengambil daftar riwayat penilaian yang sudah dilakukan.
             {
                 "id": 1,
                 "laptop_name": "Lenovo Legion 5 Pro",
-                "lcd_input": 100,
-                "battery_input": 80,
-                "ram_input": 16,
-                "keyboard_input": 100,
+                "lcd": 100,
+                "battery": 80,
+                "processor": 16,
+                "keyboard": 100,
                 "final_score": 84.42,
                 "status": "Bagus",
                 "description": "Bodi mulus 98%, charger original lengkap, port aman",
@@ -115,7 +115,7 @@ Digunakan untuk menghitung kelayakan laptop, mendapatkan kesimpulan AI, dan meny
     "laptop_name": "Lenovo Legion 5 Pro",
     "lcd": 100,
     "battery": 80,
-    "ram": 16,
+    "processor": 12000,
     "keyboard": 100,
     "description": "Bodi mulus 98%, charger original lengkap, port aman"
 }
@@ -129,10 +129,10 @@ Digunakan untuk menghitung kelayakan laptop, mendapatkan kesimpulan AI, dan meny
     "result": {
         "id": 1,
         "laptop_name": "Lenovo Legion 5 Pro",
-        "lcd_input": 100,
-        "battery_input": 80,
-        "ram_input": 16,
-        "keyboard_input": 100,
+        "lcd": 100,
+        "battery": 80,
+        "processor": 16,
+        "keyboard": 100,
         "final_score": 84.42,
         "status": "Bagus",
         "description": "Bodi mulus 98%, charger original lengkap, port aman",

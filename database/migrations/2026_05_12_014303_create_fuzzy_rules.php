@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('fuzzy_rules', function (Blueprint $table) {
             $table->id();
-            $table->string('variable'); // LCD, Baterai, RAM, Keyboard
+            $table->string('variable'); // LCD, Baterai, Processor, Keyboard
             $table->string('category'); // rendah, normal, tinggi
             $table->string('curve_type'); // turun, naik, segitiga
             $table->json('parameters'); // [20, 50]

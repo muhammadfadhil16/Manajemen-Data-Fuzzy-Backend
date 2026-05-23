@@ -29,21 +29,23 @@ class AssessmentController extends Controller
             'laptop_name' => 'required|string',
             'lcd' => 'required|numeric',
             'battery' => 'required|numeric',
-            'ram' => 'required|numeric',
+            'processor' => 'required|numeric',
             'keyboard' => 'required|numeric',
+            'market_price' => 'required|integer|min:0',
         ]);
 
         try {
             $input = [
                 'LCD' => $request->lcd,
                 'KesehatanBaterai' => $request->battery,
-                'RAM' => $request->ram,
+                'Processor' => $request->processor,
                 'KondisiKeyboard' => $request->keyboard,
             ];
 
             // 1. Panggil Service Integrasi (Microservices Call)
             $evaluationResult = $this->evaluatorService->evaluator($input);
             $score = $evaluationResult['nilaiKelayakan'];
+            $estimatedPrice = (int) floor($request->market_price * ($score / 100));
             $aiConclusion = 'tidak ada catatan tambahan';
 
             if($request->filled('description')) {
@@ -85,10 +87,12 @@ class AssessmentController extends Controller
                 'laptop_name' => $request->laptop_name,
                 'lcd_input' => $request->lcd,
                 'battery_input' => $request->battery,
-                'ram_input' => $request->ram,
+                'processor_input' => $request->processor,
                 'keyboard_input' => $request->keyboard,
                 'final_score' => $evaluationResult['nilaiKelayakan'],
                 'status' => $evaluationResult['statusKelayakan'],
+                'market_price' => $request->market_price,
+                'estimated_price' => $estimatedPrice,
                 'description' => $request->description,
                 'ai_conclusion' => $aiConclusion,
             ]);

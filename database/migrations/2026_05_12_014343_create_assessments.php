@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('laptop_name');
             $table->float('lcd_input');
             $table->float('battery_input');
-            $table->float('ram_input');
+            $table->float('processor_input');
             $table->float('keyboard_input');
             $table->float('final_score');
             $table->string('status');

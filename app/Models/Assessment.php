@@ -10,10 +10,12 @@ class Assessment extends Model
         'laptop_name',
         'lcd_input',
         'battery_input',
-        'ram_input',
+        'processor_input',
         'keyboard_input',
         'final_score',
         'status',
+        'market_price',
+        'estimated_price',
         'description',
         'ai_conclusion',
     ];
@@ -21,8 +23,10 @@ class Assessment extends Model
     protected $casts = [
         'lcd_input' => 'float',
         'battery_input' => 'float',
-        'ram_input' => 'float',
+        'processor_input' => 'float',
         'keyboard_input' => 'float',
         'final_score' => 'float',
+        'market_price' => 'integer',
+        'estimated_price' => 'integer',
     ];
 }
