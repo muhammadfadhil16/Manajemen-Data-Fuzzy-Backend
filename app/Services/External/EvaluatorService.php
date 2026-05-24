@@ -12,13 +12,13 @@ class EvaluatorService
     public function __construct()
     {
         // Alamat URL Fuzzy Service (bisa diatur di .env)
-        $this->baseUrl = rtrim(config('services.fuzzy.url', 'http://evaluator'), '/');
+        $this->baseUrl = rtrim(config('services.evaluator.url', 'http://evaluator'), '/');
     }
 
-    public function evaluator(array $input)
+    public function evaluate(array $input)
     {
         // Ambil aturan terbaru dari database Core Service
-        $rules = $this->formatRulesForFuzzyService();
+        $rules = $this->formatRulesForEvaluatorService();
 
         $payload = [
             'input' => $input,
@@ -37,19 +37,19 @@ class EvaluatorService
 
         if ($response->failed()) {
             $errorBody = $response->body();
-            throw new \Exception("Fuzzy Service Error ({$response->status()}): " . ($errorBody ?: "Tidak merespon."));
+            throw new \Exception("Evaluator Service Error ({$response->status()}): " . ($errorBody ?: "Tidak merespon."));
         }
 
         $json = $response->json();
         if (!is_array($json) || !array_key_exists('data', $json)) {
             $bodyPreview = $response->body();
-            throw new \Exception("Fuzzy Service Error: Invalid JSON response from {$url}. Body: " . ($bodyPreview ?: "<empty>"));
+            throw new \Exception("Evaluator Service Error: Invalid JSON response from {$url}. Body: " . ($bodyPreview ?: "<empty>"));
         }
 
         return $json['data'];
     }
 
-    private function formatRulesForFuzzyService(): array
+    private function formatRulesForEvaluatorService(): array
     {
         // Mengubah data tabel fuzzy_rules menjadi format JSON yang dimengerti Fuzzy Service
         $allRules = FuzzyRule::all();
