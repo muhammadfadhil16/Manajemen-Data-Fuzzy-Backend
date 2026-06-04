@@ -1,115 +1,210 @@
-# Dokumentasi Sistem: Backend Service (Core)
+# Dokumentasi Sistem: BackendService (Core API)
 
-Sistem **Backend Service** adalah layanan inti dalam ekosistem *Sistem Penilaian Kelayakan Laptop Bekas*. Layanan ini bertanggung jawab untuk mengelola data master aturan fuzzy, menyimpan hasil penilaian, berintegrasi dengan layanan perhitungan fuzzy eksternal, serta menghasilkan rekomendasi cerdas menggunakan **Gemini AI**.
+**BackendService** adalah API gateway utama dalam ekosistem *Sistem Penilaian Kelayakan Laptop Bekas*. Bertugas menerima input penilaian dari Frontend, berkomunikasi dengan **EvaluatorService** untuk perhitungan fuzzy, menangani logika Gemini AI untuk rekomendasi, dan mengelola seluruh data persistif (assessment, fuzzy rules) di database MySQL.
 
 ## 1. Ikhtisar Arsitektur
 
-Sistem ini dirancang menggunakan pendekatan *Service-Oriented Architecture* (SOA) yang di-deploy menggunakan ekosistem **Docker**.
+Sistem dirancang dengan pendekatan *Service-Oriented Architecture* (SOA) yang di-deploy menggunakan ekosistem **Docker**.
 
-- **Backend-Service (Layanan Ini)**: Menyimpan data penilaian, konfigurasi aturan, dan melakukan interaksi dengan Gemini AI.
-- **Evaluator-Service (Fuzzy Eksternal)**: Melakukan perhitungan logika fuzzy (fuzzifikasi, inferensi, defuzzifikasi).
-- **mysql-database**: Database relasional (MySQL) yang diakses oleh Backend-Service.
+```
+Frontend (Vue 3)
+    ↓ HTTP (8000)
+BackendService ←→ MySQL (db:3306)
+    ↓ HTTP (8001)
+EvaluatorService (Fuzzy Engine)
+```
 
 ### Alur Kerja (Workflow)
-1. User mengirim data kondisi fisik dan deskripsi laptop melalui Frontend API.
-2. Backend-Service mengambil aturan fuzzy terbaru dari database.
-3. Backend-Service mengirim data input (tanpa deskripsi) dan aturan ke **Evaluator-Service**.
-4. Evaluator-Service mengembalikan skor kelayakan dan status berdasarkan inferensi Mamdani.
-5. Backend-Service mengirimkan skor, status, dan deskripsi ke **Gemini AI** untuk mendapatkan rekomendasi naratif (atau menggunakan simulasi AI lokal jika gagal).
-6. Backend-Service menyimpan hasil akhir (termasuk kesimpulan AI) ke database dan merespon ke Frontend.
 
-## 2. Struktur Database
+1. User mengirim data kondisi laptop + deskripsi + harga pasar melalui API.
+2. BackendService mengambil aturan fuzzy terbaru dari tabel `fuzzy_rules`.
+3. BackendService mengirim input kondisi (LCD, Baterai, Processor, Keyboard) + rules ke **EvaluatorService** (`POST /api/evaluator`).
+4. EvaluatorService mengembalikan skor kelayakan, status, dan detail fuzzifikasi/inferensi.
+5. BackendService menghitung **estimated_price** = `floor(market_price × (final_score / 100))`.
+6. Jika `description` diisi, BackendService memanggil **Gemini AI** untuk rekomendasi naratif (fallback ke teks default jika gagal).
+7. Hasil akhir (skor, status, harga estimasi, kesimpulan AI) disimpan ke tabel `assessments` dan dikembalikan ke Frontend.
 
-Sistem ini memiliki dua tabel utama untuk mendukung proses penilaian:
+## 2. Tech Stack
 
-### a. `assessments`
-Menyimpan riwayat penilaian laptop beserta rekomendasi AI.
+| Komponen | Teknologi |
+|----------|-----------|
+| Framework | Laravel 12 |
+| PHP Version | 8.x |
+| Database | MySQL (via Docker, host: `db:3306`) |
+| HTTP Client | Laravel Http Facade (Guzzle) |
+| AI Service | Google Gemini AI (`gemini-2.5-flash`) |
+| Container | Docker + docker-compose |
 
-| Kolom | Tipe Data | Deskripsi |
+## 3. Struktur Folder
+
+```
+app/
+├── Http/Controllers/Api/
+│   ├── AssessmentController.php    # CRUD assessment + orchestrator
+│   └── Controller.php              # Base controller
+├── Models/
+│   ├── Assessment.php               # Model penilaian
+│   ├── FuzzyRule.php                # Model aturan fuzzy
+│   └── User.php                     # Model user (default Laravel)
+├── Providers/
+│   └── AppServiceProvider.php
+└── Services/External/
+    └── EvaluatorService.php         # HTTP client ke EvaluatorService
+database/
+├── migrations/ (5 file)
+└── seeders/
+    ├── DatabaseSeeder.php
+    └── FuzzyRuleSeeder.php          # Data awal aturan fuzzy
+routes/
+└── api.php                          # 4 endpoint assessment
+```
+
+## 4. Database & Migrations
+
+### 4.1 Tabel `assessments`
+
+Menyimpan riwayat penilaian laptop beserta hasil perhitungan dan rekomendasi AI.
+
+| Kolom | Tipe Data | Keterangan |
 |-------|-----------|-----------|
-| `id` | BigInt (PK) | Identifier unik. |
-| `laptop_name` | String | Nama/Model laptop yang dinilai. |
-| `lcd` | Float | Nilai kondisi layar (input). |
-| `battery` | Float | Nilai kesehatan baterai (input). |
-| `processor` | Float | Nilai processor (input). |
-| `keyboard`| Float | Skor kondisi keyboard (input). |
-| `final_score` | Float | Hasil perhitungan nilai kelayakan (0-100). |
-| `status` | String | Status kelayakan (e.g., Bagus, Sedang, Kurang Layak). |
-| `description` | Text | (Opsional) Deskripsi catatan kondisi fisik tambahan. |
-| `ai_conclusion` | Text | Kesimpulan dan rekomendasi yang dihasilkan oleh Gemini AI. |
+| `id` | bigint (PK) | Auto increment |
+| `laptop_name` | string | Nama/model laptop yang dinilai |
+| `lcd_input` | float | Kondisi LCD (0–100) |
+| `battery_input` | float | Kesehatan baterai (0–100) |
+| `processor_input` | float | Skor benchmark processor |
+| `keyboard_input` | float | Kondisi keyboard (0–100) |
+| `final_score` | float | Hasil perhitungan nilai kelayakan (0–100) |
+| `status` | string | Label: "Tidak Bagus" / "Normal" / "Bagus" |
+| `market_price` | bigint | Harga pasar (input user) |
+| `estimated_price` | bigint | `floor(market_price × (final_score / 100))` |
+| `description` | text | Deskripsi kondisi fisik tambahan (opsional) |
+| `ai_conclusion` | text | Rekomendasi naratif dari Gemini AI |
+| `created_at` | timestamp | |
+| `updated_at` | timestamp | |
 
-### b. `fuzzy_rules`
-Menyimpan parameter kurva untuk variabel fuzzy.
+#### Migration History
 
-| Kolom | Tipe Data | Deskripsi |
+1. **`2026_05_12_014303_create_fuzzy_rules.php`** — Membuat tabel `fuzzy_rules`.
+2. **`2026_05_12_014343_create_assessments.php`** — Membuat tabel `assessments` dengan kolom awal: `lcd_input`, `battery_input`, `ram_input`, `keyboard_input`.
+3. **`2026_05_20_023450_add_ai_columns_to_assessments_table.php`** — Menambah kolom `description` dan `ai_conclusion`.
+4. **`2026_05_22_100500_rename_ram_input_to_processor_input_on_assessments_table.php`** — Mengganti nama kolom `ram_input` → `processor_input`.
+5. **`2026_05_23_000000_add_price_columns_to_assessments_table.php`** — Menambah kolom `market_price` dan `estimated_price`.
+
+### 4.2 Tabel `fuzzy_rules`
+
+Menyimpan parameter kurva untuk setiap variabel fuzzy. Digunakan oleh BackendService untuk dikirim ke EvaluatorService.
+
+| Kolom | Tipe Data | Keterangan |
 |-------|-----------|-----------|
-| `variable` | String | Nama variabel (LCD, Baterai, dll). |
-| `category` | String | Kategori (rendah, normal, tinggi). |
-| `curve_type` | String | Tipe kurva (turun, naik, segitiga). |
-| `parameters` | JSON | Parameter kurva (titik-titik koordinat). |
+| `id` | bigint (PK) | Auto increment |
+| `variable` | string | Nama variabel: `LCD`, `KesehatanBaterai`, `Processor`, `KondisiKeyboard` |
+| `category` | string | Kategori: `rendah`, `normal`, `tinggi` |
+| `curve_type` | string | Tipe kurva: `turun`, `segitiga`, `naik` |
+| `parameters` | json | Array parameter kurva (2 angka untuk turun/naik, 3 untuk segitiga) |
+| `created_at` | timestamp | |
+| `updated_at` | timestamp | |
 
-## 3. Komponen Utama
+#### Seed Data (FuzzyRuleSeeder)
+
+| Variable | Category | Curve | Parameters |
+|---|---|---|---|
+| LCD | rendah | turun | [40, 60] |
+| LCD | normal | segitiga | [40, 60, 80] |
+| LCD | tinggi | naik | [60, 80] |
+| KesehatanBaterai | rendah | turun | [30, 50] |
+| KesehatanBaterai | normal | segitiga | [30, 60, 85] |
+| KesehatanBaterai | tinggi | naik | [70, 90] |
+| Processor | rendah | turun | [500, 10000] |
+| Processor | normal | segitiga | [500, 10000, 15000] |
+| Processor | tinggi | naik | [10000, 15000] |
+| KondisiKeyboard | rendah | turun | [40, 70] |
+| KondisiKeyboard | normal | segitiga | [40, 70, 90] |
+| KondisiKeyboard | tinggi | naik | [70, 90] |
+
+## 5. Komponen Utama
 
 ### `AssessmentController`
-Terletak di `app/Http/Controllers/Api/AssessmentController.php`.
-Menangani permintaan HTTP untuk pembuatan penilaian baru. Melakukan validasi input, memanggil service integrasi, melakukan pemanggilan HTTP POST ke Gemini AI, serta menyediakan mekanisme *fallback* Simulasi AI.
 
-### `FuzzyIntegrationService`
-Terletak di `app/Services/External/FuzzyIntegrationService.php`.
-Komponen ini adalah jembatan (bridge) ke Evaluator-Service (Microservice Fuzzy).
-- **Tugas**: Memformat data aturan dari database ke format JSON yang dimengerti oleh microservice eksternal.
-- **Endpoint**: Mengirim permintaan ke `POST /api/penilaian`.
+**Lokasi:** `app/Http/Controllers/Api/AssessmentController.php`
 
-## 4. Dokumentasi API
+Menangani seluruh permintaan HTTP untuk CRUD assessment. Method utama:
 
-### Daftar Penilaian (Pagination)
-Mengambil daftar riwayat penilaian yang sudah dilakukan.
+- **`index()`** — Menampilkan daftar assessment (paginated, 10 per halaman, urut `created_at` ASC).
+- **`store(Request)`** — Membuat assessment baru. Melakukan validasi, mengambil fuzzy rules, memanggil EvaluatorService, menghitung estimated_price, memanggil Gemini AI (jika ada description), dan menyimpan ke database.
+- **`show($id)`** — Menampilkan detail satu assessment.
+- **`destroy($id)`** — Menghapus assessment berdasarkan ID.
 
-**Endpoint:** `GET /api/assessments?page=1`
+### `EvaluatorService`
 
-**Response (Success):**
+**Lokasi:** `app/Services/External/EvaluatorService.php`
+
+HTTP client ke EvaluatorService (microservice fuzzy). Method utama:
+
+```php
+$evaluatorService->evaluate(array $input, array $rules): array
+```
+
+- **Source config:** `config('services.evaluator.url', 'http://evaluator')`
+- **Endpoint tujuan:** `{baseUrl}/api/evaluator`
+- **Method:** HTTP POST dengan JSON body berisi `input` + `rules`.
+
+### Gemini AI Integration
+
+**Lokasi:** Method `store()` di `AssessmentController.php`
+
+- **Model:** `gemini-2.5-flash`
+- **Dipanggil** hanya jika `$request->filled('description')`.
+- **Prompt:** Mengirim skor, status, dan deskripsi untuk mendapat rekomendasi naratif.
+- **Fallback:** Jika gagal (timeout/error), `ai_conclusion` diisi `"tidak ada catatan tambahan"`.
+
+## 6. Dokumentasi API
+
+### 6.1 Daftar Penilaian (Index)
+
+Menampilkan seluruh riwayat penilaian dengan pagination.
+
+**Endpoint:** `GET /api/assessments`
+
+**Response (200):**
+
 ```json
 {
     "status": "success",
     "data": {
-        "current_page": 1,
         "data": [
             {
                 "id": 1,
                 "laptop_name": "Lenovo Legion 5 Pro",
-                "lcd": 100,
-                "battery": 80,
-                "processor": 16,
-                "keyboard": 100,
+                "lcd_input": 100,
+                "battery_input": 80,
+                "processor_input": 12000,
+                "keyboard_input": 100,
                 "final_score": 84.42,
                 "status": "Bagus",
-                "description": "Bodi mulus 98%, charger original lengkap, port aman",
-                "ai_conclusion": "Dengan kondisi fisik yang mulus sekali tanpa goresan dan status 'Bagus', laptop ini sangat menjanjikan. Pastikan untuk memverifikasi performa secara keseluruhan untuk memastikan kepuasan Anda.",
-                "created_at": "2026-05-20T03:32:25.000000Z",
-                "updated_at": "2026-05-20T03:32:25.000000Z"
+                "market_price": 8000000,
+                "estimated_price": 6753600,
+                "description": "Bodi mulus 98%",
+                "ai_conclusion": "Laptop ini sangat layak dibeli...",
+                "created_at": "2026-05-23T10:00:00.000000Z",
+                "updated_at": "2026-05-23T10:00:00.000000Z"
             }
         ],
-        "first_page_url": "...",
-        "from": 1,
-        "last_page": 1,
-        "last_page_url": "...",
-        "links": [ ],
-        "next_page_url": null,
-        "path": "...",
+        "current_page": 1,
+        "last_page": 3,
         "per_page": 10,
-        "prev_page_url": null,
-        "to": 1,
-        "total": 1
+        "total": 25
     }
 }
 ```
 
-### Simpan Penilaian Baru
-Digunakan untuk menghitung kelayakan laptop, mendapatkan kesimpulan AI, dan menyimpannya ke database.
+### 6.2 Simpan Penilaian Baru (Store)
+
+Menghitung kelayakan, menghasilkan estimasi harga + rekomendasi AI, dan menyimpannya ke database.
 
 **Endpoint:** `POST /api/assessments`
 
 **Request Body:**
+
 ```json
 {
     "laptop_name": "Lenovo Legion 5 Pro",
@@ -117,38 +212,96 @@ Digunakan untuk menghitung kelayakan laptop, mendapatkan kesimpulan AI, dan meny
     "battery": 80,
     "processor": 12000,
     "keyboard": 100,
-    "description": "Bodi mulus 98%, charger original lengkap, port aman"
+    "market_price": 8000000,
+    "description": "Bodi mulus 98%, charger original"
 }
 ```
 
-**Response (Success):**
+**Aturan Validasi:**
+- `laptop_name` — required, string, max 255 karakter
+- `lcd` — required, numeric, between 0–100
+- `battery` — required, numeric, between 0–100
+- `processor` — required, numeric
+- `keyboard` — required, numeric, between 0–100
+- `market_price` — required, numeric, min 0
+- `description` — optional, string, nullable
+
+**Response (201):**
+
 ```json
 {
     "status": "success",
-    "message": "Penilaian berhasil dihitung dan disimpan.",
-    "result": {
+    "message": "Penilaian berhasil disimpan",
+    "data": {
         "id": 1,
         "laptop_name": "Lenovo Legion 5 Pro",
-        "lcd": 100,
-        "battery": 80,
-        "processor": 16,
-        "keyboard": 100,
         "final_score": 84.42,
         "status": "Bagus",
-        "description": "Bodi mulus 98%, charger original lengkap, port aman",
-        "ai_conclusion": "Dengan kondisi fisik yang mulus sekali tanpa goresan dan status 'Bagus', laptop ini sangat menjanjikan.",
-        "created_at": "2026-05-20T03:32:25.000000Z",
-        "updated_at": "2026-05-20T03:32:25.000000Z"
+        "market_price": 8000000,
+        "estimated_price": 6753600,
+        "ai_conclusion": "Dengan skor 84.42 (Bagus), laptop ini sangat layak dipertimbangkan. Kondisi fisik yang disebutkan ('Bodi mulus 98%, charger original') menambah nilai jual. Harga estimasi Rp6.753.600 dari harga pasar Rp8.000.000 menunjukkan nilai yang kompetitif.",
+        "description": "Bodi mulus 98%, charger original",
+        "created_at": "2026-05-23T10:00:00.000000Z",
+        "updated_at": "2026-05-23T10:00:00.000000Z"
     }
 }
 ```
 
-### Hapus Data Penilaian
-Digunakan untuk menghapus riwayat penilaian berdasarkan ID.
+**Error (422 — Validasi):**
+
+```json
+{
+    "status": "error",
+    "message": "LCD harus diisi (0-100)."
+}
+```
+
+**Error (500 — EvaluatorService Error):**
+
+```json
+{
+    "error": "Evaluator Service Error (500): Connection refused"
+}
+```
+
+### 6.3 Detail Penilaian (Show)
+
+Menampilkan satu assessment berdasarkan ID.
+
+**Endpoint:** `GET /api/assessments/{id}`
+
+**Response (200):**
+
+```json
+{
+    "status": "success",
+    "data": {
+        "id": 1,
+        "laptop_name": "Lenovo Legion 5 Pro",
+        "lcd_input": 100,
+        "battery_input": 80,
+        "processor_input": 12000,
+        "keyboard_input": 100,
+        "final_score": 84.42,
+        "status": "Bagus",
+        "market_price": 8000000,
+        "estimated_price": 6753600,
+        "description": "Bodi mulus 98%",
+        "ai_conclusion": "Laptop ini sangat layak dibeli...",
+        "created_at": "2026-05-23T10:00:00.000000Z",
+        "updated_at": "2026-05-23T10:00:00.000000Z"
+    }
+}
+```
+
+### 6.4 Hapus Penilaian (Destroy)
+
+Menghapus riwayat penilaian berdasarkan ID.
 
 **Endpoint:** `DELETE /api/assessments/{id}`
 
-**Response (Success):**
+**Response (200):**
+
 ```json
 {
     "status": "success",
@@ -156,40 +309,157 @@ Digunakan untuk menghapus riwayat penilaian berdasarkan ID.
 }
 ```
 
-## 5. Konfigurasi Lingkungan (Environment Variables)
+## 7. Integrasi EvaluatorService
 
-Pastikan variabel berikut diatur di file `.env` untuk integrasi microservice dan Google AI:
+BackendService berkomunikasi dengan EvaluatorService melalui HTTP POST. Berikut format request yang dikirim:
 
-```env
-# URL Layanan Perhitungan Fuzzy (Microservice di Docker)
-FUZZY_SERVICE_URL=http://fuzzy
+**Endpoint:** `POST {EVALUATOR_SERVICE_URL}/api/evaluator`
 
-# Kunci API untuk Agen Google Gemini AI
-GEMINI_API_KEY=AIzaSy...
+**Payload yang dikirim:**
+
+```json
+{
+    "input": {
+        "LCD": 100,
+        "KesehatanBaterai": 80,
+        "Processor": 12000,
+        "KondisiKeyboard": 100
+    },
+    "rules": {
+        "fuzzifikasi": {
+            "LCD": {
+                "rendah": [40, 60],
+                "normal": [40, 60, 80],
+                "tinggi": [60, 80]
+            },
+            "KesehatanBaterai": {
+                "rendah": [30, 50],
+                "normal": [30, 60, 85],
+                "tinggi": [70, 90]
+            },
+            "Processor": {
+                "rendah": [500, 10000],
+                "normal": [500, 10000, 15000],
+                "tinggi": [10000, 15000]
+            },
+            "KondisiKeyboard": {
+                "rendah": [40, 70],
+                "normal": [40, 70, 90],
+                "tinggi": [70, 90]
+            }
+        },
+        "defuzzifikasi": {
+            "centroid": {
+                "tidak_layak": 30,
+                "kurang_layak": 60,
+                "layak": 90
+            },
+            "batas_status": {
+                "tidak_bagus": 40,
+                "normal": 65
+            }
+        }
+    }
+}
 ```
 
-Konfigurasi ini dimuat melalui file `config/services.php`.
+**Response yang diharapkan:**
 
-## 6. Integrasi Docker & Troubleshooting
+```json
+{
+    "status": "success",
+    "data": {
+        "input": { ... },
+        "fuzzifikasi": { ... },
+        "inferensi": { ... },
+        "nilaiKelayakan": 84.42,
+        "statusKelayakan": "Bagus"
+    }
+}
+```
 
-### Port Mapping (Docker Environment)
-Seluruh sistem dijalankan melalui `docker-compose`.
+## 8. Perhitungan Harga Estimasi
 
-| Container | Port (Host) | Deskripsi |
+Setelah mendapatkan `final_score` dari EvaluatorService, BackendService menghitung:
+
+```
+estimated_price = floor(market_price × (final_score / 100))
+```
+
+**Contoh:**
+- `market_price = Rp8.000.000`
+- `final_score = 84.42`
+- `estimated_price = floor(8.000.000 × 0.8442) = Rp6.753.600`
+
+## 9. Testing
+
+**File:** `tests/Feature/AssessmentTest.php`
+
+Menggunakan trait `RefreshDatabase` + seeder `FuzzyRuleSeeder`.
+
+| Test | Deskripsi |
+|---|---|
+| `test_can_list_assessments` | GET /api/assessments → 200, struktur JSON valid |
+| `test_can_create_assessment_with_mocked_services` | POST dengan mock HTTP → 201 |
+| `test_can_show_single_assessment` | GET /api/assessments/{id} → 200 |
+| `test_can_delete_assessment` | DELETE /api/assessments/{id} → 200 |
+| `test_store_assessment_validation` | Input invalid → 422 |
+
+**Menjalankan test:**
+
+```bash
+php artisan test
+```
+
+## 10. Konfigurasi Lingkungan (Environment Variables)
+
+| Variable | Default | Keterangan |
+|---|---|---|
+| `DB_CONNECTION` | `mysql` | Koneksi database |
+| `DB_HOST` | `db` | Host MySQL (Docker) |
+| `DB_PORT` | `3306` | Port MySQL |
+| `DB_DATABASE` | `laravel` | Nama database |
+| `DB_USERNAME` | `laravel` | User database |
+| `DB_PASSWORD` | `laravel` | Password database |
+| `EVALUATOR_SERVICE_URL` | `http://evaluator` | URL EvaluatorService |
+| `GEMINI_API_KEY` | — | API key Google Gemini AI |
+
+Konfigurasi dimuat melalui file `config/services.php`:
+
+```php
+'evaluator' => [
+    'url' => env('EVALUATOR_SERVICE_URL', 'http://evaluator'),
+],
+'gemini' => [
+    'key' => env('GEMINI_API_KEY'),
+],
+```
+
+## 11. Integrasi Docker & Troubleshooting
+
+### Port Mapping
+
+| Container | Port (Host) | Keterangan |
 |-----------|-------------|-----------|
-| **Backend-Service** | 8000 | Core API (Laravel), melayani endpoint aplikasi utama. |
-| **Evaluator-Service** | 8001 | Fuzzy Microservice, menangani matematis dan rules fuzzy. |
-| **mysql-database** | 3307 | Basis data MySQL utama. |
-| **FrontendService** | 5173 | Vue.js UI dijalankan via node lokal (`npm run dev`). |
+| **BackendService** | 8000 | Core API (Laravel) |
+| **EvaluatorService** | 8001 | Fuzzy Engine |
+| **mysql-database** | 3307 | MySQL (host port) |
+| **FrontendService** | 5173 | Vue.js UI |
 
-### Masalah Umum & Cara Debugging
-1. **"Fuzzy Service Error: Invalid JSON response...":** 
-   - Ini biasanya terjadi jika ada kesalahan konfigurasi web server (Apache 403 Forbidden) di Evaluator-Service atau karakter nyasar di kode PHP.
-   - Cek konfigurasi container dengan `docker compose up -d` atau cek logs dengan `docker logs Evaluator-Service`.
-2. **AI Selalu Menampilkan "(Simulasi AI)":**
-   - Periksa file `.env`. Pastikan penulisan kunci `GEMINI_API_KEY` benar (jangan sampai ada tanda sama dengan ganda `==`).
-   - Prefix resmi Google API Key yang sah selalu berawalan huruf kapital **`AIzaSy`**.
-   - Cek file log backend dengan perintah `docker exec Backend-Service tail -n 50 /var/www/html/storage/logs/laravel.log`. Anda akan melihat respon error JSON asli dari Google di log (mis. status 400 Invalid Argument).
+### Masalah Umum
+
+**1. "Evaluator Service Error: Invalid JSON response..."**
+- Cek container EvaluatorService: `docker logs <evaluator-container>`
+- Pastikan route `/api/evaluator` terdefinisi di `routes/api.php`
+
+**2. "AI Selalu Menampilkan 'tidak ada catatan tambahan'"**
+- Periksa `GEMINI_API_KEY` di `.env`. Pastikan formatnya benar (prefix `AIzaSy`).
+- Cek log Laravel: `docker exec BackendService tail -50 /var/www/html/storage/logs/laravel.log`
+
+**3. Koneksi database ditolak**
+- Pastikan container MySQL sudah siap sebelum BackendService starting.
+- Gunakan `depends_on` dengan `condition: service_healthy` di docker-compose.
 
 ---
-*Dokumentasi ini diperbarui pada 20 Mei 2026 dengan perbaikan arsitektur Docker, penambahan field deskripsi, dan fitur Agen Gemini AI.*
+
+*Dokumentasi ini diperbarui pada 23 Mei 2026.*

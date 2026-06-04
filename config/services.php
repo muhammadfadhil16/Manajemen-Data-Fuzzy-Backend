@@ -35,8 +35,8 @@ return [
         ],
     ],
 
-    'fuzzy' => [
-        'url' => env('FUZZY_SERVICE_URL', 'http://evaluator'),
+    'evaluator' => [
+        'url' => env('EVALUATOR_SERVICE_URL', 'http://evaluator'),
     ],
 
     'gemini' => [

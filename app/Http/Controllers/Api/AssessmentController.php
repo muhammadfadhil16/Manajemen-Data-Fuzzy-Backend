@@ -43,7 +43,7 @@ class AssessmentController extends Controller
             ];
 
             // 1. Panggil Service Integrasi (Microservices Call)
-            $evaluationResult = $this->evaluatorService->evaluator($input);
+            $evaluationResult = $this->evaluatorService->evaluate($input);
             $score = $evaluationResult['nilaiKelayakan'];
             $estimatedPrice = (int) floor($request->market_price * ($score / 100));
             $aiConclusion = 'tidak ada catatan tambahan';
