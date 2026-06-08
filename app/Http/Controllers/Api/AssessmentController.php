@@ -10,6 +10,7 @@ use App\Models\Processor;
 use App\Models\AssessmentImage; 
 use App\Services\AI\AgentAIService;
 use Illuminate\Support\Facades\Storage;
+use Carbon\Carbon;
 
 class AssessmentController extends Controller
 {
@@ -18,11 +19,35 @@ class AssessmentController extends Controller
         private AgentAIService $aiService
     ) {}
 
-    public function index()
+    public function index(Request $request)
     {
-        // Menyertakan relasi 'images' agar frontend bisa membaca daftar gambar
-        $assessments = Assessment::with(['processor', 'images'])->orderBy('created_at', 'desc')->paginate(10);
-        
+        $query = Assessment::with(['processor', 'images']);
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('customer_name', 'like', "%{$search}%")
+                  ->orWhere('laptop_name', 'like', "%{$search}%")
+                  ->orWhere('id', (int) $search);
+            });
+        }
+
+        if ($request->filled('start_date')) {
+            $startUtc = Carbon::parse($request->start_date, 'Asia/Jakarta')
+                ->startOfDay()
+                ->setTimezone('UTC');
+            $query->where('created_at', '>=', $startUtc);
+        }
+
+        if ($request->filled('end_date')) {
+            $endUtc = Carbon::parse($request->end_date, 'Asia/Jakarta')
+                ->endOfDay()
+                ->setTimezone('UTC');
+            $query->where('created_at', '<=', $endUtc);
+        }
+
+        $assessments = $query->orderBy('created_at', 'desc')->paginate(10);
+
         return response()->json([
             'status' => 'success',
             'data' => $assessments
@@ -32,6 +57,7 @@ class AssessmentController extends Controller
     public function store(Request $request)
     {
         $request->validate([
+            'customer_name'  => 'required|string|max:255',
             'laptop_name'    => 'required|string',
             'images'         => 'nullable|array|max:3',
             'images.*'       => 'image|mimes:jpeg,png,jpg|max:2048',
@@ -80,22 +106,57 @@ class AssessmentController extends Controller
             // 3. Hitung Harga Estimasi (Depresiasi Berbasis Skor)
             $estimatedPrice = (int) floor($request->market_price * ($score / 100));
 
-            // 4. Dapatkan Kesimpulan Naratif dari AI Service
-            $aiConclusion = $this->aiService->getConclusion(
-                $request->laptop_name,
-                $score,
-                $status,
-                $request->description,
-                $request->lcd,
-                $request->keyboard,
-                $request->ram,
-                $request->battery,
-                $processor->name,
-                $processor->benchmark_score
-            );
+            // 4. Deteksi deskripsi tidak relevan (tidak mengandung kata terkait laptop)
+            $descriptionIgnored = false;
+            $descriptionForAi = $request->description;
+            if (!empty(trim($request->description ?? ''))) {
+                $lower = strtolower($request->description);
+                $laptopKeywords = [
+                    'laptop', 'keyboard', 'baterai', 'battery', 'lcd', 'layar',
+                    'ram', 'processor', 'cpu', 'hardisk', 'ssd', 'charge',
+                    'bodi', 'casing', 'port', 'usb', 'fan', 'kipas',
+                    'key', 'touchpad', 'trackpad', 'webcam', 'speaker',
+                    'windows', 'linux', 'macos', 'bios', 'os',
+                    'lecet', 'baret', 'penyok', 'retak', 'rusak',
+                    'mulus', 'normal', 'berfungsi', 'menyala',
+                    'upgrade', 'servis', 'service', 'perbaiki', 'ganti',
+                    'harga', 'beli', 'jual', 'second', 'bekas',
+                ];
+                $hasLaptopContext = false;
+                foreach ($laptopKeywords as $keyword) {
+                    if (str_contains($lower, $keyword)) {
+                        $hasLaptopContext = true;
+                        break;
+                    }
+                }
+                if (!$hasLaptopContext) {
+                    $descriptionIgnored = true;
+                    $descriptionForAi = null;
+                }
+            }
+
+            // 5. Dapatkan Kesimpulan Naratif dari AI Service
+            try {
+                $aiConclusion = $this->aiService->getConclusion(
+                    $request->laptop_name,
+                    $score,
+                    $status,
+                    $descriptionForAi,
+                    $request->lcd,
+                    $request->keyboard,
+                    $request->ram,
+                    $request->battery,
+                    $processor->name,
+                    $processor->benchmark_score
+                );
+            } catch (\Exception $e) {
+                \Log::error('AI Service error: ' . $e->getMessage());
+                $aiConclusion = 'tidak ada catatan tambahan';
+            }
 
             // 5. Simpan Data Evaluasi Utama Terlebih Dahulu
             $assessment = Assessment::create([
+                'customer_name'   => $request->customer_name,
                 'laptop_name'     => $request->laptop_name,
                 'lcd_input'       => $request->lcd,
                 'battery_input'   => $request->battery,
@@ -124,10 +185,13 @@ class AssessmentController extends Controller
                 }
             }
 
+            $data = $assessment->load(['processor', 'images'])->toArray();
+            $data['description_ignored'] = $descriptionIgnored;
+
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Penilaian dan gambar berhasil disimpan.',
-                'data'    => $assessment->load(['processor', 'images'])
+                'data'    => $data
             ], 201);
 
         } catch (\Exception $e) {

@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class Assessment extends Model
 {
     protected $fillable = [
+        'customer_name',
         'laptop_name',
         'lcd_input',
         'battery_input',

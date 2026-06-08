@@ -26,10 +26,7 @@ class AgentAIService
         int $processorBenchmark = 0
     ): string {
         if (empty($this->apiKey)) {
-            return $this->getFallbackConclusion(
-                $laptopName, $score, $description,
-                $lcdScore, $keyboardScore, $ramSize, $batteryScore, $processorName, $processorBenchmark
-            );
+            return 'tidak ada catatan tambahan';
         }
 
         try {
@@ -45,20 +42,23 @@ class AgentAIService
             if ($response->successful()) {
                 $candidates = $response->json()['candidates'] ?? [];
                 if (!empty($candidates)) {
-                    return $candidates[0]['content']['parts'][0]['text'];
+                    $text = $candidates[0]['content']['parts'][0]['text'];
+                    return $this->sanitize($text);
                 }
             }
 
-            return $this->getFallbackConclusion(
-                $laptopName, $score, $description,
-                $lcdScore, $keyboardScore, $ramSize, $batteryScore, $processorName, $processorBenchmark
-            );
+            return 'tidak ada catatan tambahan';
         } catch (\Exception $e) {
-            return $this->getFallbackConclusion(
-                $laptopName, $score, $description,
-                $lcdScore, $keyboardScore, $ramSize, $batteryScore, $processorName, $processorBenchmark
-            );
+            return 'tidak ada catatan tambahan';
         }
+    }
+
+    private function sanitize(string $text): string
+    {
+        $text = preg_replace('/[*_#`~\[\]()>|\\-]{2,}/', '', $text);
+        $text = preg_replace('/\n{3,}/', "\n\n", $text);
+        $text = preg_replace('/^[#*>\-|]+\s*/m', '', $text);
+        return trim($text);
     }
 
     private function buildPrompt(
@@ -78,8 +78,9 @@ class AgentAIService
             : "";
 
         return
-            "Kamu adalah seorang teknisi laptop senior dengan pengalaman 15 tahun di bengkel servis. " .
-            "Tugasmu memberi wawasan teknis dan saran praktis berdasarkan data komponen — bukan merangkum skor atau status.\n\n" .
+            "Analisis kondisi laptop berikut secara objektif dalam 2-3 kalimat. " .
+            "Gunakan bahasa Indonesia faktual, seperti laporan teknis. " .
+            "Jangan gunakan opini subjektif atau kata 'saya'.\n\n" .
             "Data laptop:\n" .
             "- Nama: {$laptopName}\n" .
             "- Skor kelayakan: {$score}/100\n" .
@@ -89,78 +90,19 @@ class AgentAIService
             "- RAM: {$ramSize} GB\n" .
             "- Baterai: {$batteryScore}%\n" .
             "- Processor: {$processorName} (benchmark {$processorBenchmark})\n" .
-            ($descText ? "- Catatan: {$descText}\n" : "") .
-            "\nGunakan bahasa Indonesia yang santai dan mudah dipahami seperti ngobrol dengan teman. " .
-            "Jangan menyebut skor atau status secara eksplisit — itu sudah ada di layar.\n\n" .
-            "3 kalimat saja:\n" .
-            "1. Berdasarkan data komponen, jelaskan bagaimana kira-kira pengalaman pakai laptop ini sehari-hari — apa yang terasa masih responsif, apa yang mulai kurang.\n" .
-            "2. Jika ada catatan dari pengguna, respons catatan tersebut dengan saran teknis. Jika tidak ada, beri tips perawatan atau hal yang perlu dicek dalam waktu dekat.\n" .
-            "3. Saran jujur: laptop ini cocok buat siapa dan kebutuhan apa.\n\n" .
-            "Contoh benar:\n" .
-            "\"LCD dan keyboard masih oke buat ngetik dan nonton, responsif. Tapi RAM 8 GB mulai terasa sempit kalau kamu suka buka banyak tab Chrome atau aplikasi desain. Saya saranin upgrade ke 16 GB kalau mau lebih nyaman. Buat kerja kantoran dan browsing sih masih worth it.\"\n\n" .
-            "Contoh SALAH:\n" .
-            "\"Laptop ini mendapat skor 85 sehingga status Layak...\" (jangan, itu cuma merangkum)";
+            ($descText ? "- Catatan pengguna: {$description}\n" : "") .
+            "\nAturan:\n" .
+            "- Jangan menyebut skor atau status secara eksplisit.\n" .
+            "- JANGAN gunakan simbol seperti **, *, _, #, -, >, |, ` atau format markdown.\n" .
+            "- Gunakan sudut pandang ketiga (misal: 'perangkat ini memiliki').\n" .
+            "- Hindari kata sifat subjektif seperti 'bagus', 'oke', 'jelek', 'worth it'.\n\n" .
+            "Struktur:\n" .
+            "1. Kondisi komponen utama berdasarkan data.\n" .
+            ($descText ? "2. Jika catatan pengguna relevan dengan laptop, kaitkan dengan data. Jika tidak relevan, abaikan.\n" : "2. Gambaran kesesuaian spesifikasi untuk penggunaan umum.\n") .
+            "3. Kesimpulan objektif tentang segmen pengguna yang sesuai.\n\n" .
+            "Contoh hasil:\n" .
+            "\"LCD dan keyboard dalam kondisi baik. RAM 8 GB mencukupi untuk aplikasi perkantoran dan browsing, namun dapat mengalami keterbatasan saat membuka banyak aplikasi secara bersamaan. Perangkat ini sesuai untuk pengguna dengan kebutuhan komputasi ringan hingga menengah.\"";
     }
 
-    private function getFallbackConclusion(
-        string $laptopName,
-        float $score,
-        ?string $description,
-        int $lcdScore,
-        int $keyboardScore,
-        float $ramSize,
-        int $batteryScore,
-        string $processorName,
-        int $processorBenchmark
-    ): string {
-        $parts = [];
 
-        if ($lcdScore >= 80) {
-            $parts[] = "LCD masih jernih dan layak dipakai.";
-        } elseif ($lcdScore >= 50) {
-            $parts[] = "LCD masih oke, tapi mungkin ada sedikit baret atau masalah ringan.";
-        } else {
-            $parts[] = "LCD perlu diperhatikan, ada kemungkinan muncul masalah seperti dead pixel atau layar redup.";
-        }
-
-        if ($ramSize >= 16) {
-            $parts[] = "RAM segini nyaman buat multitasking.";
-        } elseif ($ramSize >= 8) {
-            $parts[] = "RAM 8 GB cukup buat harian, tapi kalau sering buka banyak aplikasi bersamaan mungkin bakal perlu upgrade.";
-        } else {
-            $parts[] = "RAM termasuk kecil, saran saya upgrade biar laptop tidak lemot.";
-        }
-
-        if ($batteryScore >= 80) {
-            $parts[] = "Baterai masih sehat dan tahan lama.";
-        } elseif ($batteryScore >= 50) {
-            $parts[] = "Baterai masih bisa dipakai, tapi mungkin perlu charging lebih sering.";
-        } else {
-            $parts[] = "Baterai sudah cukup menurun, siap-siap ganti dalam waktu dekat.";
-        }
-
-        if ($processorBenchmark >= 15000) {
-            $parts[] = "Processor ini masih cukup bertenaga buat kerjaan sehari-hari sampai menengah.";
-        } elseif ($processorBenchmark >= 8000) {
-            $parts[] = "Processor ini masih oke untuk kebutuhan standar, tapi kurang cocok buat tugas berat.";
-        } else {
-            $parts[] = "Processor ini sudah agak tua, cocoknya buat tugas ringan aja.";
-        }
-
-        $rec = implode(" ", $parts);
-
-        if ($score >= 80) {
-            $rec .= " Secara keseluruhan laptop ini masih layak dipakai. ";
-        } elseif ($score >= 60) {
-            $rec .= " Buat kebutuhan kantoran dan browsing sih masih oke. ";
-        } else {
-            $rec .= " Kalau tetap mau dibeli, siapkan budget buat servis dan penggantian komponen. ";
-        }
-
-        if ($description) {
-            $rec .= "Catatan kamu: {$description}.";
-        }
-
-        return $rec;
-    }
 }
