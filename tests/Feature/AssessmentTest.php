@@ -8,6 +8,10 @@ use Tests\TestCase;
 use Database\Seeders\FuzzyRuleSeeder;
 use App\Models\Assessment;
 
+use Database\Seeders\FuzzyConfigSeeder;
+use Database\Seeders\ProcessorSeeder;
+use App\Models\Processor;
+
 class AssessmentTest extends TestCase
 {
     use RefreshDatabase;
@@ -16,7 +20,9 @@ class AssessmentTest extends TestCase
     {
         parent::setUp();
         // Seed fuzzy rules so they exist in database when formatting payload
+        $this->seed(FuzzyConfigSeeder::class);
         $this->seed(FuzzyRuleSeeder::class);
+        $this->seed(ProcessorSeeder::class);
     }
 
     /**
@@ -24,12 +30,16 @@ class AssessmentTest extends TestCase
      */
     public function test_can_list_assessments(): void
     {
+        $processor = Processor::first();
+
         Assessment::create([
             'laptop_name' => 'Laptop A',
             'lcd_input' => 80,
             'battery_input' => 75,
             'processor_input' => 8000,
             'keyboard_input' => 90,
+            'ram_input' => 8,
+            'processor_id' => $processor->id,
             'final_score' => 85,
             'status' => 'Bagus',
             'market_price' => 5000000,
@@ -78,17 +88,20 @@ class AssessmentTest extends TestCase
             ], 200)
         ]);
 
+        $processor = Processor::first();
+
         $response = $this->postJson('/api/assessments', [
             'laptop_name' => 'Asus ROG',
             'lcd' => 90,
             'battery' => 85,
-            'processor' => 12000,
+            'processor_id' => $processor->id,
             'keyboard' => 95,
+            'ram' => 16,
             'market_price' => 10000000,
             'description' => 'Kondisi fisik sangat prima.'
         ]);
 
-        $response->assertStatus(200)
+        $response->assertStatus(201)
                  ->assertJson([
                      'status' => 'success',
                      'message' => 'Penilaian berhasil dihitung dan disimpan.'
@@ -114,8 +127,9 @@ class AssessmentTest extends TestCase
                      'laptop_name',
                      'lcd',
                      'battery',
-                     'processor',
+                     'processor_id',
                      'keyboard',
+                     'ram',
                      'market_price'
                  ]);
     }
@@ -125,12 +139,16 @@ class AssessmentTest extends TestCase
      */
     public function test_can_show_single_assessment(): void
     {
+        $processor = Processor::first();
+
         $assessment = Assessment::create([
             'laptop_name' => 'MacBook Pro',
             'lcd_input' => 95,
             'battery_input' => 90,
             'processor_input' => 15000,
             'keyboard_input' => 95,
+            'ram_input' => 16,
+            'processor_id' => $processor->id,
             'final_score' => 95,
             'status' => 'Bagus',
             'market_price' => 15000000,
@@ -155,12 +173,16 @@ class AssessmentTest extends TestCase
      */
     public function test_can_delete_assessment(): void
     {
+        $processor = Processor::first();
+
         $assessment = Assessment::create([
             'laptop_name' => 'Dell XPS',
             'lcd_input' => 80,
             'battery_input' => 70,
             'processor_input' => 9000,
             'keyboard_input' => 80,
+            'ram_input' => 8,
+            'processor_id' => $processor->id,
             'final_score' => 80,
             'status' => 'Bagus',
             'market_price' => 12000000,

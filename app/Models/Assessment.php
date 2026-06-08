@@ -12,6 +12,8 @@ class Assessment extends Model
         'battery_input',
         'processor_input',
         'keyboard_input',
+        'ram_input',
+        'processor_id',
         'final_score',
         'status',
         'market_price',
@@ -25,8 +27,18 @@ class Assessment extends Model
         'battery_input' => 'float',
         'processor_input' => 'float',
         'keyboard_input' => 'float',
+        'ram_input' => 'float',
         'final_score' => 'float',
         'market_price' => 'integer',
         'estimated_price' => 'integer',
     ];
+
+    public function processor()
+    {
+        return $this->belongsTo(Processor::class);
+    }
+    public function images()
+    {
+        return $this->hasMany(AssessmentImage::class, 'assessment_id');
+    }
 }

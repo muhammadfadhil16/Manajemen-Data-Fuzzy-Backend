@@ -3,6 +3,7 @@
 namespace App\Services\External;
 
 use Illuminate\Support\Facades\Http;
+use App\Models\FuzzyConfig;
 use App\Models\FuzzyRule;
 
 class EvaluatorService
@@ -11,22 +12,27 @@ class EvaluatorService
 
     public function __construct()
     {
-        // Alamat URL Fuzzy Service (bisa diatur di .env)
         $this->baseUrl = rtrim(config('services.evaluator.url', 'http://evaluator'), '/');
     }
 
     public function evaluate(array $input)
     {
-        // Ambil aturan terbaru dari database Core Service
-        $rules = $this->formatRulesForEvaluatorService();
+        // 1. Ambil Konfigurasi Fungsi Keanggotaan (Fuzzifikasi)
+        $configs = $this->formatFuzzyConfigs();
+
+        // 2. Ambil Matriks Aturan (Inference Matrix)
+        $matrix = $this->formatInferenceMatrix();
 
         $payload = [
             'input' => $input,
             'rules' => [
-                'fuzzifikasi' => $rules,
+                'fuzzifikasi' => $configs,
+                'matrix_aturan' => $matrix,
                 'defuzzifikasi' => [
-                    'centroid' => ['tidak_layak' => 30, 'kurang_layak' => 60, 'layak' => 90],
-                    'batas_status' => ['tidak_bagus' => 40, 'normal' => 65]
+                    // Sesuai Skripsi Bab 3: Tidak Layak (Turun), Cukup Layak (Trapesium), Layak (Naik)
+                    'tidak_layak' => [40, 60],
+                    'cukup_layak' => [40, 60, 70, 90],
+                    'layak' => [70, 90]
                 ]
             ]
         ];
@@ -42,23 +48,26 @@ class EvaluatorService
 
         $json = $response->json();
         if (!is_array($json) || !array_key_exists('data', $json)) {
-            $bodyPreview = $response->body();
-            throw new \Exception("Evaluator Service Error: Invalid JSON response from {$url}. Body: " . ($bodyPreview ?: "<empty>"));
+            throw new \Exception("Evaluator Service Error: Invalid JSON response from {$url}.");
         }
 
         return $json['data'];
     }
 
-    private function formatRulesForEvaluatorService(): array
+    private function formatFuzzyConfigs(): array
     {
-        // Mengubah data tabel fuzzy_rules menjadi format JSON yang dimengerti Fuzzy Service
-        $allRules = FuzzyRule::all();
+        $allConfigs = FuzzyConfig::all();
         $formatted = [];
 
-        foreach ($allRules as $rule) {
-            $formatted[$rule->variable][$rule->category] = $rule->parameters;
+        foreach ($allConfigs as $config) {
+            $formatted[$config->variable][$config->category] = $config->parameters;
         }
 
         return $formatted;
+    }
+
+    private function formatInferenceMatrix(): array
+    {
+        return FuzzyRule::all(['lcd', 'keyboard', 'ram', 'baterai', 'processor', 'output'])->toArray();
     }
 }

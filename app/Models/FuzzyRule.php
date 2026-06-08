@@ -7,13 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 class FuzzyRule extends Model
 {
     protected $fillable = [
-        'variable',
-        'category',
-        'curve_type',
-        'parameters',
-    ];
-
-    protected $casts = [
-        'parameters' => 'array',
+        'lcd',
+        'keyboard',
+        'ram',
+        'baterai',
+        'processor',
+        'output',
     ];
 }
