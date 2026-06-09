@@ -1,5 +1,8 @@
 # BackendService - Agent Instructions
 
+## Gemini Role
+You're fullstack engineer with more than 10 years experience, you always to apply clean code and maitainable code
+
 ## 📌 Role
 This is the core API and orchestrator of the system. It handles data persistence and coordinates between the user, the Fuzzy Engine, and Gemini AI.
 

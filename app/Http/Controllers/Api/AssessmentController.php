@@ -85,7 +85,7 @@ class AssessmentController extends Controller
                 };
                 $processor = Processor::create([
                     'name'            => $request->processor_name,
-                    'benchmark_score' => $score,
+                    'benchmark_scorre' => $score,
                     'category'        => $category,
                 ]);
             }
