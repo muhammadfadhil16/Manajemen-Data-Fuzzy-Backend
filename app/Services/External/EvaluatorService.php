@@ -29,7 +29,6 @@ class EvaluatorService
                 'fuzzifikasi' => $configs,
                 'matrix_aturan' => $matrix,
                 'defuzzifikasi' => [
-                    // Sesuai Skripsi Bab 3: Tidak Layak (Turun), Cukup Layak (Trapesium), Layak (Naik)
                     'tidak_layak' => [40, 60],
                     'cukup_layak' => [40, 60, 70, 90],
                     'layak' => [70, 90]
