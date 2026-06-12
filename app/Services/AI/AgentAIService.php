@@ -7,10 +7,12 @@ use Illuminate\Support\Facades\Http;
 class AgentAIService
 {
     private ?string $apiKey;
+    private TemplateConclusionService $templateService;
 
     public function __construct()
     {
         $this->apiKey = config('services.gemini.key');
+        $this->templateService = new TemplateConclusionService();
     }
 
     public function getConclusion(
@@ -23,34 +25,68 @@ class AgentAIService
         float $ramSize = 0,
         int $batteryScore = 0,
         string $processorName = '',
-        int $processorBenchmark = 0
+        int $processorBenchmark = 0,
+        bool $descriptionIgnored = false,
+        bool $useAi = false
     ): string {
-        if (empty($this->apiKey)) {
-            return 'tidak ada catatan tambahan';
+        // Selalu gunakan template sebagai fallback utama
+        $templateConclusion = $this->templateService->getConclusion(
+            $laptopName, $score, $status, $description,
+            $lcdScore, $keyboardScore, $ramSize, $batteryScore,
+            $processorName, $processorBenchmark, $descriptionIgnored
+        );
+
+        // Cek toggle global + parameter request
+        $aiEnabled = config('services.gemini.enabled', false);
+        if (!$aiEnabled || !$useAi || empty($this->apiKey)) {
+            return $templateConclusion;
         }
 
+        // Coba panggil Gemini AI
         try {
             $prompt = $this->buildPrompt(
                 $laptopName, $score, $status, $description,
                 $lcdScore, $keyboardScore, $ramSize, $batteryScore, $processorName, $processorBenchmark
             );
 
-            $response = Http::post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" . $this->apiKey, [
-                'contents' => [['parts' => [['text' => $prompt]]]]
-            ]);
+            $response = Http::timeout(30)->post(
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" . $this->apiKey,
+                ['contents' => [['parts' => [['text' => $prompt]]]]]
+            );
 
             if ($response->successful()) {
-                $candidates = $response->json()['candidates'] ?? [];
+                $json = $response->json();
+                $candidates = $json['candidates'] ?? [];
                 if (!empty($candidates)) {
-                    $text = $candidates[0]['content']['parts'][0]['text'];
-                    return $this->sanitize($text);
+                    $parts = $candidates[0]['content']['parts'] ?? [];
+                    $text = '';
+                    foreach ($parts as $part) {
+                        $text .= $part['text'] ?? '';
+                    }
+                    $text = trim($text);
+                    if (!empty($text)) {
+                        return $this->sanitize($this->appendWarning($text, $descriptionIgnored));
+                    }
                 }
+                \Log::warning('Gemini returned empty response', ['laptop' => $laptopName]);
+            } else {
+                \Log::error('Gemini API error', ['status' => $response->status(), 'body' => $response->body()]);
             }
-
-            return 'tidak ada catatan tambahan';
         } catch (\Exception $e) {
-            return 'tidak ada catatan tambahan';
+            \Log::error('Gemini API exception: ' . $e->getMessage(), ['laptop' => $laptopName]);
         }
+
+        // Fallback ke template jika AI gagal
+        return $templateConclusion;
+    }
+
+    private function appendWarning(string $text, bool $descriptionIgnored): string
+    {
+        if (!$descriptionIgnored) {
+            return $text;
+        }
+
+        return $text . "\n\nPERINGATAN: Deskripsi yang Anda berikan tidak relevan dengan konteks penilaian laptop dan telah diabaikan. Harap berikan deskripsi terkait kondisi laptop untuk analisis yang lebih akurat.";
     }
 
     private function sanitize(string $text): string
@@ -103,6 +139,4 @@ class AgentAIService
             "Contoh hasil:\n" .
             "\"LCD dan keyboard dalam kondisi baik. RAM 8 GB mencukupi untuk aplikasi perkantoran dan browsing, namun dapat mengalami keterbatasan saat membuka banyak aplikasi secara bersamaan. Perangkat ini sesuai untuk pengguna dengan kebutuhan komputasi ringan hingga menengah.\"";
     }
-
-
 }

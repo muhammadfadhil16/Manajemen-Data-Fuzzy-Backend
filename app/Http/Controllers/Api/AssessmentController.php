@@ -70,6 +70,7 @@ class AssessmentController extends Controller
             'ram'            => 'required|numeric|min:0',
             'market_price'   => 'required|integer|min:0',
             'description'    => 'nullable|string',
+            'use_ai'         => 'nullable|boolean',
         ]);
 
         try {
@@ -106,36 +107,44 @@ class AssessmentController extends Controller
             // 3. Hitung Harga Estimasi (Depresiasi Berbasis Skor)
             $estimatedPrice = (int) floor($request->market_price * ($score / 100));
 
-            // 4. Deteksi deskripsi tidak relevan (tidak mengandung kata terkait laptop)
+            // 4. Deteksi deskripsi tidak relevan dengan konteks penilaian laptop
             $descriptionIgnored = false;
             $descriptionForAi = $request->description;
             if (!empty(trim($request->description ?? ''))) {
                 $lower = strtolower($request->description);
-                $laptopKeywords = [
-                    'laptop', 'keyboard', 'baterai', 'battery', 'lcd', 'layar',
-                    'ram', 'processor', 'cpu', 'hardisk', 'ssd', 'charge',
-                    'bodi', 'casing', 'port', 'usb', 'fan', 'kipas',
-                    'key', 'touchpad', 'trackpad', 'webcam', 'speaker',
-                    'windows', 'linux', 'macos', 'bios', 'os',
-                    'lecet', 'baret', 'penyok', 'retak', 'rusak',
-                    'mulus', 'normal', 'berfungsi', 'menyala',
-                    'upgrade', 'servis', 'service', 'perbaiki', 'ganti',
-                    'harga', 'beli', 'jual', 'second', 'bekas',
-                ];
-                $hasLaptopContext = false;
-                foreach ($laptopKeywords as $keyword) {
-                    if (str_contains($lower, $keyword)) {
-                        $hasLaptopContext = true;
-                        break;
-                    }
-                }
-                if (!$hasLaptopContext) {
+                $wordCount = str_word_count($lower);
+
+                // Deskripsi terlalu pendek (1-2 kata) dianggap tidak informatif
+                if ($wordCount <= 2) {
                     $descriptionIgnored = true;
                     $descriptionForAi = null;
+                } else {
+                    // Kata kunci kondisi komponen (bukan sekadar menyebut nama barang)
+                    $componentKeywords = [
+                        'keyboard', 'baterai', 'battery', 'lcd', 'layar',
+                        'ram', 'processor', 'cpu', 'hardisk', 'ssd', 'charge',
+                        'bodi', 'casing', 'port', 'usb', 'fan', 'kipas',
+                        'touchpad', 'trackpad', 'webcam', 'speaker',
+                        'lecet', 'baret', 'penyok', 'retak', 'rusak',
+                        'mulus', 'normal', 'berfungsi', 'menyala',
+                        'upgrade', 'servis', 'service', 'perbaiki', 'ganti',
+                    ];
+                    $matchCount = 0;
+                    foreach ($componentKeywords as $keyword) {
+                        if (str_contains($lower, $keyword)) {
+                            $matchCount++;
+                        }
+                    }
+                    // Minimal harus menyebut 1 kata kunci kondisi komponen
+                    if ($matchCount === 0) {
+                        $descriptionIgnored = true;
+                        $descriptionForAi = null;
+                    }
                 }
             }
 
             // 5. Dapatkan Kesimpulan Naratif dari AI Service
+            $useAi = $request->boolean('use_ai', false);
             try {
                 $aiConclusion = $this->aiService->getConclusion(
                     $request->laptop_name,
@@ -147,11 +156,16 @@ class AssessmentController extends Controller
                     $request->ram,
                     $request->battery,
                     $processor->name,
-                    $processor->benchmark_score
+                    $processor->benchmark_score,
+                    $descriptionIgnored,
+                    $useAi
                 );
             } catch (\Exception $e) {
                 \Log::error('AI Service error: ' . $e->getMessage());
                 $aiConclusion = 'tidak ada catatan tambahan';
+                if ($descriptionIgnored) {
+                    $aiConclusion .= "\n\nPERINGATAN: Deskripsi yang Anda berikan tidak relevan dengan konteks penilaian laptop dan telah diabaikan. Harap berikan deskripsi terkait kondisi laptop untuk analisis yang lebih akurat.";
+                }
             }
 
             // 5. Simpan Data Evaluasi Utama Terlebih Dahulu
@@ -187,6 +201,15 @@ class AssessmentController extends Controller
 
             $data = $assessment->load(['processor', 'images'])->toArray();
             $data['description_ignored'] = $descriptionIgnored;
+
+            // Parse warning marker dari ai_conclusion
+            $aiWarning = null;
+            if (str_contains($aiConclusion, 'PERINGATAN:')) {
+                $parts = explode('PERINGATAN:', $aiConclusion, 2);
+                $data['ai_conclusion'] = trim($parts[0]);
+                $aiWarning = trim($parts[1]);
+            }
+            $data['ai_warning'] = $aiWarning;
 
             return response()->json([
                 'status'  => 'success',
