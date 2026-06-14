@@ -29,9 +29,9 @@ class EvaluatorService
                 'fuzzifikasi' => $configs,
                 'matrix_aturan' => $matrix,
                 'defuzzifikasi' => [
-                    'tidak_layak' => [40, 60],
-                    'cukup_layak' => [40, 60, 70, 90],
-                    'layak' => [70, 90]
+                    'tidak_layak' => [55, 65],
+                    'cukup_layak' => [55, 65, 85, 90],
+                    'layak' => [85, 90]
                 ]
             ]
         ];

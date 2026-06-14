@@ -14,10 +14,10 @@ return new class extends Migration
         Schema::create('assessments', function (Blueprint $table) {
             $table->id();
             $table->string('laptop_name');
-            $table->float('lcd_input');
-            $table->float('battery_input');
+            $table->unsignedTinyInteger('lcd_input');
+            $table->unsignedTinyInteger('battery_input');
             $table->float('processor_input');
-            $table->float('keyboard_input');
+            $table->unsignedTinyInteger('keyboard_input');
             $table->float('final_score');
             $table->string('status');
             $table->timestamps();

@@ -3,8 +3,8 @@
 
 | Status | Revised |
 | :--- | :--- |
-| **Versi** | 1.2 |
-| **Tanggal** | 9 Juni 2026 |
+| **Versi** | 1.3 |
+| **Tanggal** | 13 Juni 2026 |
 | **Pemilik** | Muhammad Fadhil |
 
 ---
@@ -18,6 +18,12 @@
 2.  **Pusat Pengetahuan (Knowledge Base):** Menyimpan master data benchmark prosesor dan matriks ratusan aturan fuzzy secara dinamis.
 3.  **Transparansi Harga:** Memberikan estimasi harga beli/jual yang adil berdasarkan skor kelayakan teknis.
 4.  **Rekomendasi Pintar:** Memberikan narasi saran yang mudah dipahami pengguna melalui Gemini AI (100% dari AI, tanpa fallback PHP).
+
+---
+
+## 1.3 Perubahan Terbaru (v1.3)
+- **Bug Fix**: Memperbaiki typo pada `AssessmentController.php` line 89: `'benchmark_scorre'` → `'benchmark_score'` yang menyebabkan error `SQLSTATE[HY000]: General error: 1364 Field 'benchmark_score' doesn't have a default value` saat membuat processor baru.
+- **Testing Endpoint**: Menambahkan endpoint `POST /api/processors` untuk membuat data processor secara manual. **Catatan: Endpoint ini dibuat hanya untuk keperluan testing/fleksibilitas pengujian backend, bukan bagian dari alur sistem produksi.** Pada sistem produksi, data processor dikelola melalui seeder/migrasi atau admin panel terpisah.
 
 ---
 
@@ -107,6 +113,24 @@ Sistem dirancang dengan pendekatan **Service-Oriented Architecture (SOA)** mengg
 | `ai_conclusion` | Text | Output dari Gemini AI (atau 'tidak ada catatan tambahan' jika gagal) |
 | `description` | Text | Catatan tambahan user (mentah, sebelum filter relevansi) |
 | `created_at` | Timestamp | Waktu penilaian (disimpan dalam UTC) |
+
+---
+
+## 4.3 API Endpoints
+
+### Processor
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/processors` | List semua processor (produksi) |
+| POST | `/api/processors` | **Testing only** — Membuat processor baru untuk keperluan pengujian. **Tidak digunakan dalam alur produksi.** |
+
+### Assessment
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/assessments` | List riwayat penilaian dengan filter & pagination |
+| POST | `/api/assessments` | Buat penilaian baru (alur utama produksi) |
+| GET | `/api/assessments/{id}` | Detail penilaian |
+| DELETE | `/api/assessments/{id}` | Hapus penilaian |
 
 ---
 

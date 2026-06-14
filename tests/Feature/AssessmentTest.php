@@ -33,6 +33,7 @@ class AssessmentTest extends TestCase
         $processor = Processor::first();
 
         Assessment::create([
+            'customer_name' => 'John Doe',
             'laptop_name' => 'Laptop A',
             'lcd_input' => 80,
             'battery_input' => 75,
@@ -88,9 +89,15 @@ class AssessmentTest extends TestCase
             ], 200)
         ]);
 
+        config([
+            'services.gemini.enabled' => true,
+            'services.gemini.key' => 'test-key'
+        ]);
+
         $processor = Processor::first();
 
         $response = $this->postJson('/api/assessments', [
+            'customer_name' => 'John Doe',
             'laptop_name' => 'Asus ROG',
             'lcd' => 90,
             'battery' => 85,
@@ -98,13 +105,14 @@ class AssessmentTest extends TestCase
             'keyboard' => 95,
             'ram' => 16,
             'market_price' => 10000000,
-            'description' => 'Kondisi fisik sangat prima.'
+            'description' => 'Kondisi keyboard mulus.',
+            'use_ai' => true
         ]);
 
         $response->assertStatus(201)
                  ->assertJson([
                      'status' => 'success',
-                     'message' => 'Penilaian berhasil dihitung dan disimpan.'
+                     'message' => 'Penilaian dan gambar berhasil disimpan.'
                  ]);
 
         $this->assertDatabaseHas('assessments', [
@@ -124,10 +132,10 @@ class AssessmentTest extends TestCase
 
         $response->assertStatus(422)
                  ->assertJsonValidationErrors([
+                     'customer_name',
                      'laptop_name',
                      'lcd',
                      'battery',
-                     'processor_id',
                      'keyboard',
                      'ram',
                      'market_price'
@@ -142,6 +150,7 @@ class AssessmentTest extends TestCase
         $processor = Processor::first();
 
         $assessment = Assessment::create([
+            'customer_name' => 'John Doe',
             'laptop_name' => 'MacBook Pro',
             'lcd_input' => 95,
             'battery_input' => 90,
@@ -176,6 +185,7 @@ class AssessmentTest extends TestCase
         $processor = Processor::first();
 
         $assessment = Assessment::create([
+            'customer_name' => 'John Doe',
             'laptop_name' => 'Dell XPS',
             'lcd_input' => 80,
             'battery_input' => 70,
@@ -196,7 +206,7 @@ class AssessmentTest extends TestCase
         $response->assertStatus(200)
                  ->assertJson([
                      'status' => 'success',
-                     'message' => 'Data penilaian berhasil dihapus.'
+                     'message' => 'Data penilaian beserta file gambar berhasil dihapus.'
                  ]);
 
         $this->assertDatabaseMissing('assessments', [

@@ -24,10 +24,10 @@ class Assessment extends Model
     ];
 
     protected $casts = [
-        'lcd_input' => 'float',
-        'battery_input' => 'float',
+        'lcd_input' => 'integer',
+        'battery_input' => 'integer',
         'processor_input' => 'float',
-        'keyboard_input' => 'float',
+        'keyboard_input' => 'integer',
         'ram_input' => 'float',
         'final_score' => 'float',
         'market_price' => 'integer',

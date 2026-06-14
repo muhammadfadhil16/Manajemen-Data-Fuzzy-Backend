@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AssessmentController;
 use App\Http\Controllers\Api\ProcessorController;
 
 Route::get('/processors', [ProcessorController::class, 'index']);
+Route::post('/processors', [ProcessorController::class, 'store']);
 
 Route::get('/assessments', [AssessmentController::class, 'index']);
 Route::post('/assessments', [AssessmentController::class, 'store']);

@@ -94,6 +94,9 @@ class AgentAIService
         $text = preg_replace('/[*_#`~\[\]()>|\\-]{2,}/', '', $text);
         $text = preg_replace('/\n{3,}/', "\n\n", $text);
         $text = preg_replace('/^[#*>\-|]+\s*/m', '', $text);
+        $text = preg_replace('/\b(bagus|oke|jelek|worth it|recommended|sangat direkomendasikan|kosmetik)\b/i', '', $text);
+        $text = preg_replace('/\s{2,}/', ' ', $text);
+        $text = preg_replace('/\.\s*\./', '.', $text);
         return trim($text);
     }
 
@@ -110,33 +113,41 @@ class AgentAIService
         int $processorBenchmark
     ): string {
         $descText = $description
-            ? "Pengguna juga memberikan catatan tambahan: \"{$description}\"."
+            ? "Catatan teknisi: \"{$description}\"."
             : "";
 
         return
-            "Analisis kondisi laptop berikut secara objektif dalam 2-3 kalimat. " .
-            "Gunakan bahasa Indonesia faktual, seperti laporan teknis. " .
-            "Jangan gunakan opini subjektif atau kata 'saya'.\n\n" .
+            "Anda adalah TEKNISI LAPTOP BERPENGALAMAN. Tulis LAPORAN TEKNIS untuk teknisi menentukan REPARASI/UPGRADE prioritas.\n\n" .
             "Data laptop:\n" .
-            "- Nama: {$laptopName}\n" .
+            "- Model: {$laptopName}\n" .
             "- Skor kelayakan: {$score}/100\n" .
-            "- Status: {$status}\n" .
             "- LCD: {$lcdScore}/100\n" .
             "- Keyboard: {$keyboardScore}/100\n" .
             "- RAM: {$ramSize} GB\n" .
             "- Baterai: {$batteryScore}%\n" .
             "- Processor: {$processorName} (benchmark {$processorBenchmark})\n" .
-            ($descText ? "- Catatan pengguna: {$description}\n" : "") .
-            "\nAturan:\n" .
-            "- Jangan menyebut skor atau status secara eksplisit.\n" .
-            "- JANGAN gunakan simbol seperti **, *, _, #, -, >, |, ` atau format markdown.\n" .
-            "- Gunakan sudut pandang ketiga (misal: 'perangkat ini memiliki').\n" .
-            "- Hindari kata sifat subjektif seperti 'bagus', 'oke', 'jelek', 'worth it'.\n\n" .
-            "Struktur:\n" .
-            "1. Kondisi komponen utama berdasarkan data.\n" .
-            ($descText ? "2. Jika catatan pengguna relevan dengan laptop, kaitkan dengan data. Jika tidak relevan, abaikan.\n" : "2. Gambaran kesesuaian spesifikasi untuk penggunaan umum.\n") .
-            "3. Kesimpulan objektif tentang segmen pengguna yang sesuai.\n\n" .
-            "Contoh hasil:\n" .
-            "\"LCD dan keyboard dalam kondisi baik. RAM 8 GB mencukupi untuk aplikasi perkantoran dan browsing, namun dapat mengalami keterbatasan saat membuka banyak aplikasi secara bersamaan. Perangkat ini sesuai untuk pengguna dengan kebutuhan komputasi ringan hingga menengah.\"";
+            ($descText ? "- {$descText}\n" : "") .
+            "\nATURAN WAJIB:\n" .
+            "1. JANGAN sebut skor/status (tidak 'skor 93', 'status Layak').\n" .
+            "2. JANGAN gunakan markdown, simbol **, *, _, #, -, >, |, `, bullet points.\n" .
+            "3. JANGAN kata subjektif: bagus, oke, jelek, worth it, recommended, layak, tidak layak.\n" .
+            "4. STRUKTUR WAJIB 3 BAGIAN (pisah paragraf):\n" .
+            "   A. KONDISI FISIK: LCD, Keyboard, Baterai - sebut angka persen, sebut butuh reparasi apa (ganti LCD, ganti keyboard, ganti baterai).\n" .
+            "   B. PERFORMA & UPGRADE: RAM & Processor - sebut cocok untuk beban apa, apakah butuh upgrade RAM/SSD.\n" .
+            "   C. REPARASI PRIORITAS TEKNISI: daftar prioritas perbaikan dari yang paling urgent ke minor, atau 'tidak ada' jika semua baik.\n" .
+            "5. Catatan teknisi (port rusak, engsel, upgrade, dll): KAITKAN ke komponen di bagian A/B.\n" .
+            "6. Bahasa: Indonesia formal teknis, singkat, actionable. Hindari kata 'kosmetik' - gunakan 'fisik', 'eksternal', 'body', 'casing', 'perbaikan body/casing'.\n\n" .
+            "CONTOH:\n" .
+            "---\n" .
+            "Input: LCD 95, Keyboard 95, Baterai 95, RAM 16, Proc AMD Ryzen 9 5900HX (22082), Catatan: 'port USB rusak'\n" .
+            "Output: \"LCD 95% - kondisi prima, tidak perlu reparasi. Keyboard 95% - normal, tidak perlu reparasi. Baterai 95% - sehat, tidak perlu ganti. RAM 16 GB dan AMD Ryzen 9 5900HX mendukung editing video dan multitasking berat. Catatan teknisi: beberapa port USB tidak berfungsi, perlu perbaikan port I/O untuk fleksibilitas penuh. REPARASI PRIORITAS TEKNISI: 1. perbaikan port I/O.\"\n" .
+            "---\n" .
+            "Input: LCD 60, Keyboard 40, Baterai 30, RAM 8, Proc Intel Core i5-8250U (7600), Catatan: ''\n" .
+            "Output: \"LCD 60% - ada cacat visual, perlu ganti panel LCD. Keyboard 40% - tombol tidak responsif, perlu ganti keyboard. Baterai 30% - aus berat, WAJIB ganti baterai. RAM 8 GB memadai tugas ringan, processor Intel Core i5-8250U terbatas browsing dan office. REPARASI PRIORITAS TEKNISI: 1. ganti baterai (urgent), 2. ganti panel LCD, 3. ganti keyboard.\"\n" .
+            "---\n" .
+            "Input: LCD 85, Keyboard 80, Baterai 70, RAM 32, Proc Intel Core i7-12700H (28000), Catatan: 'sudah upgrade RAM dan SSD'\n" .
+            "Output: \"LCD 85% - baik, tidak perlu reparasi. Keyboard 80% - normal, tidak perlu reparasi. Baterai 70% - masih memadai, monitor kesehatan. RAM 32 GB (upgrade) dan Intel Core i7-12700H siap rendering, compile, virtualisasi. Upgrade RAM/SSD sudah dilakukan, value tambah. REPARASI PRIORITAS TEKNISI: tidak ada, hanya monitoring baterai.\"\n" .
+            "---\n" .
+            "Sekarang tulis laporan teknis untuk data di atas:";
     }
 }

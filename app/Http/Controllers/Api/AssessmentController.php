@@ -61,12 +61,12 @@ class AssessmentController extends Controller
             'laptop_name'    => 'required|string',
             'images'         => 'nullable|array|max:3',
             'images.*'       => 'image|mimes:jpeg,png,jpg|max:2048',
-            'lcd'            => 'required|numeric|between:0,100',
-            'battery'        => 'required|numeric|between:0,100',
+            'lcd'            => 'required|integer|between:0,100',
+            'battery'        => 'required|integer|between:0,100',
             'processor_id'   => 'nullable|exists:processors,id',
             'processor_name' => 'required_without:processor_id|string|max:255',
             'processor_input'=> 'required_without:processor_id|numeric|min:0',
-            'keyboard'       => 'required|numeric|between:0,100',
+            'keyboard'       => 'required|integer|between:0,100',
             'ram'            => 'required|numeric|min:0',
             'market_price'   => 'required|integer|min:0',
             'description'    => 'nullable|string',
@@ -84,9 +84,9 @@ class AssessmentController extends Controller
                     $score <= 18000   => 'Sedang',
                     default           => 'Tinggi',
                 };
-                $processor = Processor::create([
+$processor = Processor::create([
                     'name'            => $request->processor_name,
-                    'benchmark_scorre' => $score,
+                    'benchmark_score' => $score,
                     'category'        => $category,
                 ]);
             }
