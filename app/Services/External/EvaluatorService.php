@@ -5,6 +5,7 @@ namespace App\Services\External;
 use Illuminate\Support\Facades\Http;
 use App\Models\FuzzyConfig;
 use App\Models\FuzzyRule;
+use App\Models\FuzzyThreshold;
 
 class EvaluatorService
 {
@@ -23,16 +24,19 @@ class EvaluatorService
         // 2. Ambil Matriks Aturan (Inference Matrix)
         $matrix = $this->formatInferenceMatrix();
 
+        // 3. Ambil Konfigurasi Defuzzifikasi dari Database
+        $defuzzifikasi = $this->formatDefuzzifikasiConfigs();
+
+        // 4. Ambil Threshold Batas Kelayakan dari Database
+        $thresholds = $this->formatThresholds();
+
         $payload = [
             'input' => $input,
             'rules' => [
                 'fuzzifikasi' => $configs,
                 'matrix_aturan' => $matrix,
-                'defuzzifikasi' => [
-                    'tidak_layak' => [55, 65],
-                    'cukup_layak' => [55, 65, 85, 90],
-                    'layak' => [85, 90]
-                ]
+                'defuzzifikasi' => $defuzzifikasi,
+                'thresholds' => $thresholds,
             ]
         ];
 
@@ -55,7 +59,7 @@ class EvaluatorService
 
     private function formatFuzzyConfigs(): array
     {
-        $allConfigs = FuzzyConfig::all();
+        $allConfigs = FuzzyConfig::where('variable', '!=', 'Kelayakan')->get();
         $formatted = [];
 
         foreach ($allConfigs as $config) {
@@ -68,5 +72,22 @@ class EvaluatorService
     private function formatInferenceMatrix(): array
     {
         return FuzzyRule::all(['lcd', 'keyboard', 'ram', 'baterai', 'processor', 'output'])->toArray();
+    }
+
+    private function formatDefuzzifikasiConfigs(): array
+    {
+        $configs = FuzzyConfig::where('variable', 'Kelayakan')->get();
+        $formatted = [];
+
+        foreach ($configs as $config) {
+            $formatted[$config->category] = $config->parameters;
+        }
+
+        return $formatted;
+    }
+
+    private function formatThresholds(): array
+    {
+        return FuzzyThreshold::pluck('value', 'name')->toArray();
     }
 }

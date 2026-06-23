@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             FuzzyConfigSeeder::class,
             FuzzyRuleSeeder::class,
+            FuzzyThresholdSeeder::class,
             ProcessorSeeder::class,
         ]);
 

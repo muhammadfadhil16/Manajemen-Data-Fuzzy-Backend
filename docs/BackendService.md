@@ -16,9 +16,9 @@ EvaluatorService (Fuzzy Engine)
 
 ### Alur Kerja (Workflow)
 
-1. User mengirim data kondisi laptop + deskripsi + harga pasar melalui API.
-2. BackendService mengambil aturan fuzzy terbaru dari tabel `fuzzy_rules`.
-3. BackendService mengirim input kondisi (LCD, Baterai, Processor, Keyboard) + rules ke **EvaluatorService** (`POST /api/evaluator`).
+1. User mengirim data kondisi laptop (LCD, Keyboard, RAM, Baterai, Processor) + deskripsi + harga pasar melalui API.
+2. BackendService mengambil parameter fuzzifikasi & defuzzifikasi dari tabel `fuzzy_configs`, 243 aturan dari `fuzzy_rules`, dan threshold dari `fuzzy_thresholds`.
+3. BackendService mengirim input kondisi + rules + threshold ke **EvaluatorService** (`POST /api/evaluator`).
 4. EvaluatorService mengembalikan skor kelayakan, status, dan detail fuzzifikasi/inferensi.
 5. BackendService menghitung **estimated_price** = `floor(market_price × (final_score / 100))`.
 6. Jika `description` diisi, BackendService memanggil **Gemini AI** untuk rekomendasi naratif (fallback ke teks default jika gagal).
@@ -44,17 +44,21 @@ app/
 │   └── Controller.php              # Base controller
 ├── Models/
 │   ├── Assessment.php               # Model penilaian
-│   ├── FuzzyRule.php                # Model aturan fuzzy
+│   ├── FuzzyConfig.php              # Model konfigurasi fuzzifikasi & defuzzifikasi
+│   ├── FuzzyRule.php                # Model aturan inferensi fuzzy (243 rules)
+│   ├── FuzzyThreshold.php           # Model threshold batas kelayakan dinamis
 │   └── User.php                     # Model user (default Laravel)
 ├── Providers/
 │   └── AppServiceProvider.php
 └── Services/External/
     └── EvaluatorService.php         # HTTP client ke EvaluatorService
 database/
-├── migrations/ (5 file)
+├── migrations/ (15 file)
 └── seeders/
     ├── DatabaseSeeder.php
-    └── FuzzyRuleSeeder.php          # Data awal aturan fuzzy
+    ├── FuzzyConfigSeeder.php         # Data kurva fuzzifikasi & defuzzifikasi
+    ├── FuzzyRuleSeeder.php           # 243 aturan inferensi fuzzy
+    └── FuzzyThresholdSeeder.php      # Threshold batas kelayakan dinamis
 routes/
 └── api.php                          # 4 endpoint assessment
 ```
@@ -68,58 +72,110 @@ Menyimpan riwayat penilaian laptop beserta hasil perhitungan dan rekomendasi AI.
 | Kolom | Tipe Data | Keterangan |
 |-------|-----------|-----------|
 | `id` | bigint (PK) | Auto increment |
+| `customer_name` | string | Nama customer/pemilik laptop |
 | `laptop_name` | string | Nama/model laptop yang dinilai |
 | `lcd_input` | float | Kondisi LCD (0–100) |
 | `battery_input` | float | Kesehatan baterai (0–100) |
 | `processor_input` | float | Skor benchmark processor |
 | `keyboard_input` | float | Kondisi keyboard (0–100) |
+| `ram_input` | float | Kapasitas RAM (GB) |
 | `final_score` | float | Hasil perhitungan nilai kelayakan (0–100) |
-| `status` | string | Label: "Tidak Bagus" / "Normal" / "Bagus" |
+| `status` | string | Label: "Tidak Layak" / "Cukup Layak" / "Layak" |
 | `market_price` | bigint | Harga pasar (input user) |
 | `estimated_price` | bigint | `floor(market_price × (final_score / 100))` |
 | `description` | text | Deskripsi kondisi fisik tambahan (opsional) |
 | `ai_conclusion` | text | Rekomendasi naratif dari Gemini AI |
+| `processor_id` | bigint (FK) | ID processor dari tabel `processors` |
 | `created_at` | timestamp | |
 | `updated_at` | timestamp | |
 
 #### Migration History
 
-1. **`2026_05_12_014303_create_fuzzy_rules.php`** — Membuat tabel `fuzzy_rules`.
+1. **`2026_05_12_014303_create_fuzzy_rules.php`** — Membuat tabel `fuzzy_rules` (awal, kemudian di-rename jadi `fuzzy_configs`).
 2. **`2026_05_12_014343_create_assessments.php`** — Membuat tabel `assessments` dengan kolom awal: `lcd_input`, `battery_input`, `ram_input`, `keyboard_input`.
 3. **`2026_05_20_023450_add_ai_columns_to_assessments_table.php`** — Menambah kolom `description` dan `ai_conclusion`.
 4. **`2026_05_22_100500_rename_ram_input_to_processor_input_on_assessments_table.php`** — Mengganti nama kolom `ram_input` → `processor_input`.
 5. **`2026_05_23_000000_add_price_columns_to_assessments_table.php`** — Menambah kolom `market_price` dan `estimated_price`.
+6. **`2026_06_07_111717_rename_fuzzy_rules_to_fuzzy_configs_table.php`** — Mengganti nama tabel `fuzzy_rules` menjadi `fuzzy_configs`.
+7. **`2026_06_07_111745_create_fuzzy_rules_table.php`** — Membuat tabel `fuzzy_rules` baru untuk matriks 243 aturan inferensi.
+8. **`2026_06_21_000001_create_fuzzy_thresholds_table.php`** — Membuat tabel `fuzzy_thresholds` untuk batas kelayakan dinamis.
 
-### 4.2 Tabel `fuzzy_rules`
+### 4.2 Tabel `fuzzy_configs`
 
-Menyimpan parameter kurva untuk setiap variabel fuzzy. Digunakan oleh BackendService untuk dikirim ke EvaluatorService.
+Menyimpan parameter kurva fungsi keanggotaan *fuzzifikasi* (5 variabel input) dan *defuzzifikasi* (variabel Kelayakan). Digunakan oleh BackendService untuk dikirim ke EvaluatorService.
 
 | Kolom | Tipe Data | Keterangan |
 |-------|-----------|-----------|
 | `id` | bigint (PK) | Auto increment |
-| `variable` | string | Nama variabel: `LCD`, `KesehatanBaterai`, `Processor`, `KondisiKeyboard` |
-| `category` | string | Kategori: `rendah`, `normal`, `tinggi` |
-| `curve_type` | string | Tipe kurva: `turun`, `segitiga`, `naik` |
-| `parameters` | json | Array parameter kurva (2 angka untuk turun/naik, 3 untuk segitiga) |
+| `variable` | string | Nama variabel: `LCD`, `KesehatanBaterai`, `Processor`, `KondisiKeyboard`, `RAM`, `Kelayakan` |
+| `category` | string | Kategori: `buruk`/`rendah`, `sedang`, `baik`/`tinggi`, `tidak_layak`, `cukup_layak`, `layak` |
+| `curve_type` | string | Tipe kurva: `trapesium`, `segitiga` |
+| `parameters` | json | Array parameter kurva [a, b, c, d] (4 angka trapesium, 3 untuk segitiga) |
 | `created_at` | timestamp | |
 | `updated_at` | timestamp | |
 
-#### Seed Data (FuzzyRuleSeeder)
+#### Seed Data (FuzzyConfigSeeder) — Fuzzifikasi
 
 | Variable | Category | Curve | Parameters |
 |---|---|---|---|
-| LCD | rendah | turun | [40, 60] |
-| LCD | normal | segitiga | [40, 60, 80] |
-| LCD | tinggi | naik | [60, 80] |
-| KesehatanBaterai | rendah | turun | [30, 50] |
-| KesehatanBaterai | normal | segitiga | [30, 60, 85] |
-| KesehatanBaterai | tinggi | naik | [70, 90] |
-| Processor | rendah | turun | [500, 10000] |
-| Processor | normal | segitiga | [500, 10000, 15000] |
-| Processor | tinggi | naik | [10000, 15000] |
-| KondisiKeyboard | rendah | turun | [40, 70] |
-| KondisiKeyboard | normal | segitiga | [40, 70, 90] |
-| KondisiKeyboard | tinggi | naik | [70, 90] |
+| LCD | buruk | trapesium | [0, 0, 55, 65] |
+| LCD | sedang | trapesium | [55, 65, 75, 85] |
+| LCD | baik | trapesium | [75, 85, 100, 100] |
+| KondisiKeyboard | buruk | trapesium | [0, 0, 55, 65] |
+| KondisiKeyboard | sedang | trapesium | [55, 65, 75, 85] |
+| KondisiKeyboard | baik | trapesium | [75, 85, 100, 100] |
+| RAM | rendah | trapesium | [4, 4, 6, 8] |
+| RAM | sedang | segitiga | [6, 8, 12] |
+| RAM | tinggi | trapesium | [8, 12, 64, 64] |
+| KesehatanBaterai | rendah | trapesium | [0, 0, 60, 70] |
+| KesehatanBaterai | sedang | segitiga | [60, 70, 85] |
+| KesehatanBaterai | tinggi | trapesium | [70, 85, 100, 100] |
+| Processor | rendah | trapesium | [0, 0, 8000, 10000] |
+| Processor | sedang | trapesium | [8000, 10000, 18000, 20000] |
+| Processor | tinggi | trapesium | [18000, 20000, 64946, 64946] |
+
+#### Seed Data (FuzzyConfigSeeder) — Defuzzifikasi
+
+| Variable | Category | Curve | Parameters |
+|---|---|---|---|
+| Kelayakan | tidak_layak | trapesium | [0, 0, 55, 65] |
+| Kelayakan | cukup_layak | trapesium | [55, 65, 85, 90] |
+| Kelayakan | layak | trapesium | [85, 90, 100, 100] |
+
+### 4.3 Tabel `fuzzy_rules` (Matriks Inferensi)
+
+Menyimpan 243 kombinasi aturan IF-THEN untuk inferensi Mamdani.
+
+| Kolom | Tipe Data | Keterangan |
+|-------|-----------|-----------|
+| `id` | bigint (PK) | Auto increment |
+| `lcd` | enum | `buruk`, `sedang`, `baik` |
+| `keyboard` | enum | `buruk`, `sedang`, `baik` |
+| `ram` | enum | `rendah`, `sedang`, `tinggi` |
+| `baterai` | enum | `rendah`, `sedang`, `tinggi` |
+| `processor` | enum | `rendah`, `sedang`, `tinggi` |
+| `output` | enum | `tidak_layak`, `cukup_layak`, `layak` |
+| `created_at` | timestamp | |
+| `updated_at` | timestamp | |
+
+### 4.4 Tabel `fuzzy_thresholds`
+
+Menyimpan batas status kelayakan yang dapat diubah secara dinamis tanpa deploy ulang.
+
+| Kolom | Tipe Data | Keterangan |
+|-------|-----------|-----------|
+| `id` | bigint (PK) | Auto increment |
+| `name` | string (unique) | Nama threshold: `tidak_layak_batas`, `layak_batas` |
+| `value` | decimal(5,2) | Nilai batas (0–100) |
+| `created_at` | timestamp | |
+| `updated_at` | timestamp | |
+
+#### Seed Data (FuzzyThresholdSeeder)
+
+| Name | Value |
+|------|-------|
+| tidak_layak_batas | 65.00 |
+| layak_batas | 85.00 |
 
 ## 5. Komponen Utama
 
@@ -129,10 +185,10 @@ Menyimpan parameter kurva untuk setiap variabel fuzzy. Digunakan oleh BackendSer
 
 Menangani seluruh permintaan HTTP untuk CRUD assessment. Method utama:
 
-- **`index()`** — Menampilkan daftar assessment (paginated, 10 per halaman, urut `created_at` ASC).
-- **`store(Request)`** — Membuat assessment baru. Melakukan validasi, mengambil fuzzy rules, memanggil EvaluatorService, menghitung estimated_price, memanggil Gemini AI (jika ada description), dan menyimpan ke database.
-- **`show($id)`** — Menampilkan detail satu assessment.
-- **`destroy($id)`** — Menghapus assessment berdasarkan ID.
+- **`index()`** — Menampilkan daftar assessment (paginated, 10 per halaman, urut `created_at` DESC). Mendukung filter `search`, `start_date`, dan `end_date` (konversi WIB → UTC).
+- **`store(Request)`** — Membuat assessment baru. Melakukan validasi input, menentukan processor (dari ID atau buat baru), memanggil EvaluatorService untuk fuzzy logic, menghitung estimated_price, mendeteksi relevansi deskripsi, memanggil Gemini AI (jika use_ai=true dan deskripsi relevan), menyimpan gambar ke storage, dan menyimpan ke database.
+- **`show($id)`** — Menampilkan detail satu assessment beserta relasi processor dan images.
+- **`destroy($id)`** — Menghapus assessment beserta file gambar dari storage berdasarkan ID.
 
 ### `EvaluatorService`
 
@@ -141,8 +197,15 @@ Menangani seluruh permintaan HTTP untuk CRUD assessment. Method utama:
 HTTP client ke EvaluatorService (microservice fuzzy). Method utama:
 
 ```php
-$evaluatorService->evaluate(array $input, array $rules): array
+$evaluatorService->evaluate(array $input): array
 ```
+
+Alur internal:
+1. `formatFuzzyConfigs()` — membaca kurva fuzzifikasi dari `fuzzy_configs` (5 variabel input)
+2. `formatInferenceMatrix()` — membaca 243 aturan dari `fuzzy_rules`
+3. `formatDefuzzifikasiConfigs()` — membaca kurva output dari `fuzzy_configs` (variable `Kelayakan`)
+4. `formatThresholds()` — membaca threshold dari `fuzzy_thresholds`
+5. HTTP POST ke EvaluatorService dengan payload `input` + `rules` (fuzzifikasi, matrix_aturan, defuzzifikasi, thresholds)
 
 - **Source config:** `config('services.evaluator.url', 'http://evaluator')`
 - **Endpoint tujuan:** `{baseUrl}/api/evaluator`
@@ -174,17 +237,22 @@ Menampilkan seluruh riwayat penilaian dengan pagination.
         "data": [
             {
                 "id": 1,
+                "customer_name": "John Doe",
                 "laptop_name": "Lenovo Legion 5 Pro",
                 "lcd_input": 100,
                 "battery_input": 80,
                 "processor_input": 12000,
                 "keyboard_input": 100,
+                "ram_input": 16,
                 "final_score": 84.42,
-                "status": "Bagus",
+                "status": "Cukup Layak",
                 "market_price": 8000000,
                 "estimated_price": 6753600,
                 "description": "Bodi mulus 98%",
-                "ai_conclusion": "Laptop ini sangat layak dibeli...",
+                "ai_conclusion": "LCD dalam kondisi baik, keyboard berfungsi normal...",
+                "processor_id": 1,
+                "processor": { "id": 1, "name": "Intel Core i7-12700H", "benchmark_score": 12000, "category": "Tinggi" },
+                "images": [],
                 "created_at": "2026-05-23T10:00:00.000000Z",
                 "updated_at": "2026-05-23T10:00:00.000000Z"
             }
@@ -202,65 +270,110 @@ Menampilkan seluruh riwayat penilaian dengan pagination.
 Menghitung kelayakan, menghasilkan estimasi harga + rekomendasi AI, dan menyimpannya ke database.
 
 **Endpoint:** `POST /api/assessments`
+**Content-Type:** `application/json` atau `multipart/form-data`
 
-**Request Body:**
+**Request Body (JSON):**
 
 ```json
 {
+    "customer_name": "John Doe",
     "laptop_name": "Lenovo Legion 5 Pro",
     "lcd": 100,
     "battery": 80,
-    "processor": 12000,
     "keyboard": 100,
+    "ram": 16,
     "market_price": 8000000,
-    "description": "Bodi mulus 98%, charger original"
+    "processor_id": 1,
+    "description": "Bodi mulus 98%, charger original",
+    "use_ai": false
+}
+```
+
+**Atau dengan processor baru (tanpa processor_id):**
+
+```json
+{
+    "customer_name": "John Doe",
+    "laptop_name": "Lenovo Legion 5 Pro",
+    "lcd": 90,
+    "battery": 85,
+    "keyboard": 95,
+    "ram": 8,
+    "market_price": 5000000,
+    "processor_name": "AMD Ryzen 5 5600H",
+    "processor_input": 14000,
+    "use_ai": true
 }
 ```
 
 **Aturan Validasi:**
-- `laptop_name` — required, string, max 255 karakter
-- `lcd` — required, numeric, between 0–100
-- `battery` — required, numeric, between 0–100
-- `processor` — required, numeric
-- `keyboard` — required, numeric, between 0–100
-- `market_price` — required, numeric, min 0
-- `description` — optional, string, nullable
+| Field | Aturan |
+|-------|--------|
+| `customer_name` | required, string, max 255 |
+| `laptop_name` | required, string |
+| `lcd` | required, integer, between 0–100 |
+| `battery` | required, integer, between 0–100 |
+| `keyboard` | required, integer, between 0–100 |
+| `ram` | required, numeric, min 0 |
+| `market_price` | required, integer, min 0 |
+| `processor_id` | nullable, exists:processors,id |
+| `processor_name` | required_without:processor_id, string, max 255 |
+| `processor_input` | required_without:processor_id, numeric, min 0 |
+| `description` | nullable, string |
+| `use_ai` | nullable, boolean |
+| `images` | nullable, array, max 3 |
+| `images.*` | image, mimes:jpeg,png,jpg, max:2048 |
 
 **Response (201):**
 
 ```json
 {
     "status": "success",
-    "message": "Penilaian berhasil disimpan",
+    "message": "Penilaian dan gambar berhasil disimpan.",
     "data": {
         "id": 1,
+        "customer_name": "John Doe",
         "laptop_name": "Lenovo Legion 5 Pro",
+        "lcd_input": 100,
+        "battery_input": 80,
+        "processor_input": 12000,
+        "keyboard_input": 100,
+        "ram_input": 16,
         "final_score": 84.42,
-        "status": "Bagus",
+        "status": "Cukup Layak",
         "market_price": 8000000,
         "estimated_price": 6753600,
-        "ai_conclusion": "Dengan skor 84.42 (Bagus), laptop ini sangat layak dipertimbangkan. Kondisi fisik yang disebutkan ('Bodi mulus 98%, charger original') menambah nilai jual. Harga estimasi Rp6.753.600 dari harga pasar Rp8.000.000 menunjukkan nilai yang kompetitif.",
         "description": "Bodi mulus 98%, charger original",
+        "ai_conclusion": "LCD dalam kondisi baik, keyboard berfungsi normal...",
+        "processor_id": 1,
+        "processor": { "id": 1, "name": "Intel Core i7-12700H", "benchmark_score": 12000, "category": "Tinggi" },
+        "images": [],
+        "description_ignored": false,
+        "ai_used": false,
+        "ai_warning": null,
         "created_at": "2026-05-23T10:00:00.000000Z",
         "updated_at": "2026-05-23T10:00:00.000000Z"
     }
 }
 ```
 
-**Error (422 — Validasi):**
+**Error (422 — Validasi Laravel):**
+
+```json
+{
+    "message": "lcd harus diisi.",
+    "errors": {
+        "lcd": ["lcd harus diisi."]
+    }
+}
+```
+
+**Error (500 — Internal Server Error):**
 
 ```json
 {
     "status": "error",
-    "message": "LCD harus diisi (0-100)."
-}
-```
-
-**Error (500 — EvaluatorService Error):**
-
-```json
-{
-    "error": "Evaluator Service Error (500): Connection refused"
+    "message": "Gagal memproses penilaian: [detail error]"
 }
 ```
 
@@ -277,17 +390,21 @@ Menampilkan satu assessment berdasarkan ID.
     "status": "success",
     "data": {
         "id": 1,
+        "customer_name": "John Doe",
         "laptop_name": "Lenovo Legion 5 Pro",
         "lcd_input": 100,
         "battery_input": 80,
         "processor_input": 12000,
         "keyboard_input": 100,
+        "ram_input": 16,
         "final_score": 84.42,
-        "status": "Bagus",
+        "status": "Cukup Layak",
         "market_price": 8000000,
         "estimated_price": 6753600,
         "description": "Bodi mulus 98%",
-        "ai_conclusion": "Laptop ini sangat layak dibeli...",
+        "ai_conclusion": "LCD dalam kondisi baik, keyboard berfungsi normal...",
+        "processor": { "id": 1, "name": "Intel Core i7-12700H", "benchmark_score": 12000, "category": "Tinggi" },
+        "images": [],
         "created_at": "2026-05-23T10:00:00.000000Z",
         "updated_at": "2026-05-23T10:00:00.000000Z"
     }
@@ -323,41 +440,49 @@ BackendService berkomunikasi dengan EvaluatorService melalui HTTP POST. Berikut 
         "LCD": 100,
         "KesehatanBaterai": 80,
         "Processor": 12000,
-        "KondisiKeyboard": 100
+        "KondisiKeyboard": 100,
+        "RAM": 16
     },
     "rules": {
         "fuzzifikasi": {
             "LCD": {
-                "rendah": [40, 60],
-                "normal": [40, 60, 80],
-                "tinggi": [60, 80]
-            },
-            "KesehatanBaterai": {
-                "rendah": [30, 50],
-                "normal": [30, 60, 85],
-                "tinggi": [70, 90]
-            },
-            "Processor": {
-                "rendah": [500, 10000],
-                "normal": [500, 10000, 15000],
-                "tinggi": [10000, 15000]
+                "buruk": [0, 0, 55, 65],
+                "sedang": [55, 65, 75, 85],
+                "baik": [75, 85, 100, 100]
             },
             "KondisiKeyboard": {
-                "rendah": [40, 70],
-                "normal": [40, 70, 90],
-                "tinggi": [70, 90]
+                "buruk": [0, 0, 55, 65],
+                "sedang": [55, 65, 75, 85],
+                "baik": [75, 85, 100, 100]
+            },
+            "RAM": {
+                "rendah": [4, 4, 6, 8],
+                "sedang": [6, 8, 12],
+                "tinggi": [8, 12, 64, 64]
+            },
+            "KesehatanBaterai": {
+                "rendah": [0, 0, 60, 70],
+                "sedang": [60, 70, 85],
+                "tinggi": [70, 85, 100, 100]
+            },
+            "Processor": {
+                "rendah": [0, 0, 8000, 10000],
+                "sedang": [8000, 10000, 18000, 20000],
+                "tinggi": [18000, 20000, 64946, 64946]
             }
         },
+        "matrix_aturan": [
+            { "lcd": "buruk", "keyboard": "buruk", "ram": "rendah", "baterai": "rendah", "processor": "rendah", "output": "tidak_layak" },
+            { "lcd": "baik", "keyboard": "baik", "ram": "tinggi", "baterai": "tinggi", "processor": "tinggi", "output": "layak" }
+        ],
         "defuzzifikasi": {
-            "centroid": {
-                "tidak_layak": 30,
-                "kurang_layak": 60,
-                "layak": 90
-            },
-            "batas_status": {
-                "tidak_bagus": 40,
-                "normal": 65
-            }
+            "tidak_layak": [0, 0, 55, 65],
+            "cukup_layak": [55, 65, 85, 90],
+            "layak": [85, 90, 100, 100]
+        },
+        "thresholds": {
+            "tidak_layak_batas": 65.00,
+            "layak_batas": 85.00
         }
     }
 }
@@ -371,9 +496,13 @@ BackendService berkomunikasi dengan EvaluatorService melalui HTTP POST. Berikut 
     "data": {
         "input": { ... },
         "fuzzifikasi": { ... },
-        "inferensi": { ... },
+        "inferensi": {
+            "tidak_layak": 0,
+            "cukup_layak": 0.5,
+            "layak": 0.8
+        },
         "nilaiKelayakan": 84.42,
-        "statusKelayakan": "Bagus"
+        "statusKelayakan": "Cukup Layak"
     }
 }
 ```
@@ -435,7 +564,26 @@ Konfigurasi dimuat melalui file `config/services.php`:
 ],
 ```
 
-## 11. Integrasi Docker & Troubleshooting
+## 10. CORS Configuration
+
+BackendService mengizinkan akses dari origin mana pun untuk mendukung integrasi eksternal.
+
+**Konfigurasi (`config/cors.php`):**
+```php
+'paths'            => ['api/*', 'sanctum/csrf-cookie'],
+'allowed_methods'  => ['*'],
+'allowed_origins'  => ['*'],     // Izinkan semua origin
+'allowed_headers'  => ['*'],     // Izinkan semua header
+```
+
+**Catatan:**
+- Middleware `HandleCors` terdaftar secara otomatis oleh Laravel 12 sebagai global middleware — tidak perlu registrasi manual.
+- Semua response API menyertakan header `Access-Control-Allow-Origin: *`.
+- Preflight `OPTIONS` request ditangani dengan benar (response 204 + CORS headers).
+
+---
+
+## 12. Integrasi Docker & Troubleshooting
 
 ### Port Mapping
 
@@ -460,6 +608,11 @@ Konfigurasi dimuat melalui file `config/services.php`:
 - Pastikan container MySQL sudah siap sebelum BackendService starting.
 - Gunakan `depends_on` dengan `condition: service_healthy` di docker-compose.
 
+**4. Request dari klien eksternal gagal dengan "Failed to fetch"**
+- CORS sudah dikonfigurasi (`Access-Control-Allow-Origin: *`). Cek apakah service berjalan: `curl http://localhost:8000/api/assessments`.
+- Jika menggunakan `file://` protocol, coba jalankan HTML via web server: `python3 -m http.server` atau `npx serve`.
+- Pastikan nama field API benar (`lcd`, `battery`, `keyboard`, `ram`, `battery` — bukan `lcd_input`, dll).
+
 ---
 
-*Dokumentasi ini diperbarui pada 23 Mei 2026.*
+*Dokumentasi ini diperbarui pada 21 Juni 2026.*

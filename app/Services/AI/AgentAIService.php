@@ -8,6 +8,7 @@ class AgentAIService
 {
     private ?string $apiKey;
     private TemplateConclusionService $templateService;
+    public bool $aiUsed = false;
 
     public function __construct()
     {
@@ -37,8 +38,7 @@ class AgentAIService
         );
 
         // Cek toggle global + parameter request
-        $aiEnabled = config('services.gemini.enabled', false);
-        if (!$aiEnabled || !$useAi || empty($this->apiKey)) {
+        if (!$useAi || empty($this->apiKey)) {
             return $templateConclusion;
         }
 
@@ -65,6 +65,7 @@ class AgentAIService
                     }
                     $text = trim($text);
                     if (!empty($text)) {
+                        $this->aiUsed = true;
                         return $this->sanitize($this->appendWarning($text, $descriptionIgnored));
                     }
                 }

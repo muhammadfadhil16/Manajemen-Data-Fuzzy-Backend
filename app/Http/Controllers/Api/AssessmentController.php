@@ -71,6 +71,29 @@ class AssessmentController extends Controller
             'market_price'   => 'required|integer|min:0',
             'description'    => 'nullable|string',
             'use_ai'         => 'nullable|boolean',
+        ], [
+            'customer_name.required'   => 'Nama customer wajib diisi.',
+            'customer_name.max'        => 'Nama customer maksimal 255 karakter.',
+            'laptop_name.required'     => 'Nama perangkat/model laptop wajib diisi.',
+            'lcd.required'             => 'Kondisi LCD wajib ditentukan.',
+            'lcd.between'              => 'Skor LCD harus antara 0 sampai 100.',
+            'battery.required'         => 'Kesehatan baterai wajib ditentukan.',
+            'battery.between'          => 'Kesehatan baterai harus antara 0% sampai 100%.',
+            'ram.required'             => 'Kapasitas RAM wajib dipilih.',
+            'ram.min'                  => 'Kapasitas RAM tidak boleh negatif.',
+            'keyboard.required'        => 'Fungsi keyboard wajib ditentukan.',
+            'keyboard.between'         => 'Skor keyboard harus antara 0 sampai 100.',
+            'processor_id.exists'      => 'Processor yang dipilih tidak ditemukan dalam database.',
+            'processor_name.required_without' => 'Nama processor wajib diisi jika tidak memilih dari daftar.',
+            'processor_name.max'       => 'Nama processor maksimal 255 karakter.',
+            'processor_input.required_without' => 'Benchmark processor wajib diisi jika input manual.',
+            'processor_input.min'      => 'Benchmark processor tidak boleh negatif.',
+            'market_price.required'    => 'Harga pasaran wajib diisi.',
+            'market_price.min'         => 'Harga pasaran tidak boleh negatif.',
+            'images.max'               => 'Maksimal 3 foto yang dapat diunggah.',
+            'images.*.image'           => 'File harus berupa gambar.',
+            'images.*.mimes'           => 'Format gambar harus JPG, JPEG, atau PNG.',
+            'images.*.max'             => 'Ukuran gambar maksimal 2MB per file.',
         ]);
 
         try {
@@ -84,7 +107,7 @@ class AssessmentController extends Controller
                     $score <= 18000   => 'Sedang',
                     default           => 'Tinggi',
                 };
-$processor = Processor::create([
+                $processor = Processor::create([
                     'name'            => $request->processor_name,
                     'benchmark_score' => $score,
                     'category'        => $category,
@@ -145,6 +168,7 @@ $processor = Processor::create([
 
             // 5. Dapatkan Kesimpulan Naratif dari AI Service
             $useAi = $request->boolean('use_ai', false);
+            $aiUsed = false;
             try {
                 $aiConclusion = $this->aiService->getConclusion(
                     $request->laptop_name,
@@ -160,6 +184,7 @@ $processor = Processor::create([
                     $descriptionIgnored,
                     $useAi
                 );
+                $aiUsed = $this->aiService->aiUsed;
             } catch (\Exception $e) {
                 \Log::error('AI Service error: ' . $e->getMessage());
                 $aiConclusion = 'tidak ada catatan tambahan';
@@ -210,6 +235,7 @@ $processor = Processor::create([
                 $aiWarning = trim($parts[1]);
             }
             $data['ai_warning'] = $aiWarning;
+            $data['ai_used'] = $aiUsed;
 
             return response()->json([
                 'status'  => 'success',
